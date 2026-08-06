@@ -83,7 +83,7 @@
   choosing the fixture/live scenario key. The same mechanism resolves a
   second ambiguity found this phase: `latency_p95` on target-orders fires
   for both `latency` (toxiproxy) and `cache_outage` (a paused redis makes
-  every cache call hang) — disambiguated by checking whether the `redis`
+  every cache call hang) -- disambiguated by checking whether the `redis`
   container is paused.
 - **Five unit test files**: `test_policy.py`, `test_security.py`,
   `test_gate.py` (the pure-ish helpers: runaway-brake counting,
@@ -170,7 +170,7 @@
   to propagate out of `emit()`. When that happened inside
   `_mark_escalated_on_crash`'s transaction, the whole transaction rolled
   back and the incident it was trying to escalate was left stuck in
-  `resolving` forever, silently — and because the `aegis-db` volume
+  `resolving` forever, silently -- and because the `aegis-db` volume
   persists across `docker compose down` (without `-v`), one such stuck row
   from earlier in this session's live testing kept blocking every later
   `service_down`/target-payments detection via the dedup check for the
@@ -188,7 +188,7 @@
   faults break every request through more than one service continuously,
   not as a single probe; left injected for the full window, detection
   reopens a fresh incident on the very next 5s poll after each one
-  resolves or escalates, for as long as the fault is active — 17
+  resolves or escalates, for as long as the fault is active -- 17
   (cache_outage) and 39 (error_spike) concurrent incidents in testing,
   which exhausted this session's Groq free-tier daily budget on both
   candidate `LLM_LARGE` models (`openai/gpt-oss-120b` at 199,492/200,000
@@ -221,9 +221,9 @@
   fixture identically to a recorded one, and every tool the mocked model
   "calls" still executes for real against the live stack when the e2e
   test runs (only the model's own decisions are ever mocked, plan/03).
-  What live-recorded fixtures would additionally have proven — that the
+  What live-recorded fixtures would additionally have proven -- that the
   live model, unprompted beyond the corrected system prompt, actually
-  reaches these hypotheses and proposals on its own — is not proven this
+  reaches these hypotheses and proposals on its own -- is not proven this
   phase for these three scenarios specifically. Green/OPA policy handling,
   the executor, and the whole approval/veto/interrupt/resume mechanism
   _are_ fully live-verified, independent of any fixture (see Live
@@ -260,7 +260,7 @@ incident.resolved         system:supervisor
 
 `GET /api/incidents/{id}/verify-chain` -> `{"valid":true,"break_at_seq":null}`.
 
-### Red tier: signed approval wakes a parked run (`MOCK_LLM=0`, no fixtures involved — gate is code)
+### Red tier: signed approval wakes a parked run (`MOCK_LLM=0`, no fixtures involved -- gate is code)
 
 ```
 $ docker compose exec -T core-worker python - < scripts/seed_red_action.py
@@ -327,7 +327,7 @@ $ MOCK_LLM=1 pytest e2e -q
 ```
 
 The 4 failures were `test_killing_worker_mid_run_resumes_from_checkpoint`,
-`test_crash_heals`, `test_error_spike_heals`, `test_memory_leak_heals` —
+`test_crash_heals`, `test_error_spike_heals`, `test_memory_leak_heals` --
 every failure specifically involves target-payments, and all four ran
 consecutively after `test_checkpoint_resume.py`'s `docker compose kill -s
 KILL core-worker` + crash-scenario restart. Traced to a real but
