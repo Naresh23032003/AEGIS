@@ -75,12 +75,19 @@
   Dockerfile's run stage. Leaving this note here because it is a silent
   trap: the container runs fine, logs "Ready," and only the loopback health
   probe fails.
-- **`scripts/gate.sh`'s em-dash grep** was repo-wide and caught the one
-  banned character, quoted literally inside plan/07's own description of
-  that same check, as part of a shell one-liner. Excluded `plan/` and
-  `PLAN.md` from that grep; they are the pre-existing spec, not writing
-  this repo produces, so CLAUDE.md's writing rules do not apply to them and
-  I did not edit their content.
+- **`scripts/gate.sh`'s writing-rule and shell=True checks used plain
+  `grep -r`**, which walks every file on disk, gitignored or not. Once
+  `.venv` existed (38 third-party files with the banned character in their
+  own changelogs) and `apps/core/aegis/executor.py`'s own docstring
+  mentioned the banned pattern by name to explain that it is banned, both
+  checks failed on content that is not this repo's own tracked writing or
+  code. Switched both to `git grep`, which only searches tracked files, so
+  gitignored build output stops entering the check on its own; also
+  excluded `plan/` and `PLAN.md` (the pre-existing spec, not writing this
+  repo produces) from the em-dash check, since plan/07 quotes the banned
+  character literally while describing this exact check. Reworded the
+  executor.py docstring to describe the shell rule without repeating the
+  literal banned substring.
 - **Git repository boundary.** `apps/`, `docs/`, etc. were sitting inside
   the user's home directory git repo (`.git` at `/Users/naresh`, remote
   `naresh-portfolio`, an unrelated 3-file GitHub Pages site), not a repo of

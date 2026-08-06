@@ -22,15 +22,16 @@ if [ ! -s "$report" ] || [ "$(wc -l < "$report")" -lt 15 ]; then
 fi
 
 # 3. Writing rules
-# plan/ and PLAN.md are the pre-existing spec, not this repo's own writing;
-# they are out of scope for CLAUDE.md's writing rules and are not edited here.
-if grep -rIn $'\xe2\x80\x94' . --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=.next \
-    --exclude-dir=plan --exclude=PLAN.md --exclude=gate.sh -q; then
+# git grep only searches tracked files, so gitignored build output
+# (.venv, node_modules, generated/) never enters this check on its own.
+# plan/ and PLAN.md are the pre-existing spec, not this repo's own
+# writing, and are excluded deliberately.
+if git grep -In $'\xe2\x80\x94' -- . ':!plan' ':!PLAN.md' ':!scripts/gate.sh' -q 2>/dev/null; then
   say "FAIL: em dash found"; fail=1
 fi
 
 # 4. Security invariants (cheap greps, deep review happens later)
-if grep -rn "shell=True" apps/ 2>/dev/null | grep -q .; then
+if git grep -n "shell=True" -- apps/ -q 2>/dev/null; then
   say "FAIL: shell=True present"; fail=1
 fi
 

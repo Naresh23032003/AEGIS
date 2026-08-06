@@ -2,7 +2,8 @@
 
 Phase 0 stub: an asyncio loop that logs a heartbeat and exits cleanly on
 SIGTERM. The allowlisted action catalog and Docker socket RPC arrive in
-phase 2 (plan/04-security.md, Executor sandbox). No shell=True, ever.
+phase 2 (plan/04-security.md, Executor sandbox). Subprocess calls never
+run through a shell, per CLAUDE.md.
 """
 
 import asyncio
