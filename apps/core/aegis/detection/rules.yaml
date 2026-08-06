@@ -1,0 +1,26 @@
+# plan/03-agents-and-policy.md, Detection.
+# PromQL text lives here, not hardcoded in Python, so a metric-name mismatch
+# between what FastAPI's OTel instrumentation actually exports and what plan/02
+# assumed can be fixed without a code change. See plan/phases/phase-1.md, Gotchas,
+# and the "Prometheus metric names" note in docs/reports/PHASE_1_REPORT.md for
+# the names actually verified against a running stack.
+
+queries:
+  p95_latency: >-
+    histogram_quantile(0.95, sum(rate(http_server_duration_milliseconds_bucket{service_name=~"target-.*"}[1m])) by (le, service_name))
+  error_rate: >-
+    sum(rate(http_server_duration_milliseconds_count{http_status_code=~"5..", service_name=~"target-.*"}[1m])) by (service_name)
+    / sum(rate(http_server_duration_milliseconds_count{service_name=~"target-.*"}[1m])) by (service_name)
+
+rules:
+  - id: latency_p95
+    query: p95_latency
+    threshold_ms: 1000
+    sustain_seconds: 15
+  - id: error_rate
+    query: error_rate
+    threshold: 0.10
+    sustain_seconds: 15
+  - id: service_down
+    probe: healthz
+    fail_count: 3

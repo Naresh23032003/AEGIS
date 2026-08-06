@@ -1,0 +1,68 @@
+# Closed action catalog. plan/03-agents-and-policy.md, Action catalog.
+# Agents may only reference these keys; the executor maps each one to a
+# hardcoded docker-SDK/HTTP call, never a shell string. Params listed here
+# are validated independently by the executor before the catalog_key is
+# ever touched (plan/04-security.md, Executor sandbox), and again by the
+# LLM's structured-output schema on the way in.
+#
+# TARGET_SERVICES is the fixed list `service` params validate against.
+
+target_services:
+  - target-gateway
+  - target-orders
+  - target-payments
+
+actions:
+  restart_service:
+    tier: green
+    effect: "docker restart of one target container"
+    rollback_key: null
+    params:
+      service: { type: string, in: target_services }
+
+  clear_cache:
+    tier: green
+    effect: "FLUSHDB on shop cache keyspace"
+    rollback_key: null
+    params: {}
+
+  remove_toxic:
+    tier: green
+    effect: "delete a named Toxiproxy toxic"
+    rollback_key: null
+    params:
+      toxic_name: { type: string }
+
+  restart_dependency:
+    tier: yellow
+    effect: "restart redis or toxiproxy container"
+    rollback_key: null
+    params:
+      service: { type: string, enum: [redis, toxiproxy] }
+
+  scale_service:
+    tier: yellow
+    effect: "compose scale target service 1 -> 2"
+    rollback_key: scale_service
+    params:
+      service: { type: string, in: target_services }
+      replicas: { type: integer }
+
+  rollback_config:
+    tier: yellow
+    effect: "restore last good config file for a target service + restart"
+    rollback_key: rollback_config
+    params:
+      service: { type: string, in: target_services }
+
+  flush_queue:
+    tier: red
+    effect: "purge orders retry queue"
+    rollback_key: null
+    params: {}
+
+  restart_database:
+    tier: red
+    effect: "restart shop-db"
+    rollback_key: null
+    params: {}

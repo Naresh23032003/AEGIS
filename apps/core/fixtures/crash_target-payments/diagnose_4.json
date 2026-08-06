@@ -1,0 +1,16 @@
+{
+  "calls": [
+    {
+      "arguments": {
+        "confidence": 0.97,
+        "evidence_refs": [
+          "get_container_stats(target-payments)",
+          "query_logs(target-payments)",
+          "query_metrics(target-payments)"
+        ],
+        "hypothesis": "The target-payments container has exited (process stopped), causing healthz probe failures and service downtime."
+      },
+      "name": "submit_diagnosis"
+    }
+  ]
+}

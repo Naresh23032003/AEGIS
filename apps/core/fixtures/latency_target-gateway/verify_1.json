@@ -1,0 +1,17 @@
+{
+  "calls": [
+    {
+      "arguments": {
+        "services": "target-gateway"
+      },
+      "name": "run_verification_probes"
+    },
+    {
+      "arguments": {
+        "passed": true,
+        "summary": "p95 latency on target-gateway confirmed to be 123.45ms, within the threshold of 1000ms."
+      },
+      "name": "submit_verification"
+    }
+  ]
+}
