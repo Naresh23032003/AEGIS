@@ -20,6 +20,35 @@ DETECT_TIMEOUT_SECONDS = 90  # generous: PromQL rate()[1m] windows vary, see PHA
 RESOLVE_TIMEOUT_SECONDS = 240
 
 
+@pytest.fixture(autouse=True)
+def _ensure_worker_running() -> None:
+    """Safety net around test_checkpoint_resume.py's SIGKILL: if a prior
+    test's restart raced docker and lost, later tests would otherwise fail
+    for an unrelated reason (no worker to detect/remediate anything)."""
+    out = subprocess.run(
+        [  # noqa: S607 - "docker" resolved via PATH, internal test tooling
+            "docker",
+            "compose",
+            "-f",
+            "deploy/docker-compose.yml",
+            "ps",
+            "--status",
+            "running",
+            "--format",
+            "{{.Name}}",
+            "core-worker",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if "core-worker" not in out.stdout:
+        # "docker" resolved via PATH; internal test tooling, not user input.
+        up_cmd = ["docker", "compose", "-f", "deploy/docker-compose.yml", "up", "-d", "core-worker"]  # noqa: S607
+        subprocess.run(up_cmd, check=False, capture_output=True)  # noqa: S603
+        time.sleep(3)
+
+
 @pytest.fixture
 def client() -> httpx.Client:
     with httpx.Client(base_url=API_URL, timeout=10.0) as c:
