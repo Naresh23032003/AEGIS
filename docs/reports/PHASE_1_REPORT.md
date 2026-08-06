@@ -4,7 +4,7 @@
 
 - **Target services**, real endpoints per plan/06 phase 1: `target-gateway`
   (`POST /checkout` orchestrates orders -> payments -> orders, `GET
-  /orders/{id}` proxy), `target-orders` (`POST /orders`, `GET /orders/{id}`
+/orders/{id}` proxy), `target-orders` (`POST /orders`, `GET /orders/{id}`
   cached through redis, `POST /orders/{id}/complete`, all DB access through
   Toxiproxy), `target-payments` (`POST /charge`, plus the `error_spike` and
   `memory_leak` fault-hook endpoints under `/internal/fault/*`). Each has
@@ -32,8 +32,8 @@
   the `aegis:events` Redis stream in one call, inside the caller's
   transaction).
 - **core-api**: `GET /api/incidents`, `GET /api/incidents/{id}`, `GET
-  /api/incidents/{id}/events`, `POST`/`DELETE /api/chaos/{scenario}`, `WS
-  /ws/events` with the replay handshake (`{"replay_incident": "<id>"}`) and
+/api/incidents/{id}/events`, `POST`/`DELETE /api/chaos/{scenario}`, `WS
+/ws/events` with the replay handshake (`{"replay_incident": "<id>"}`) and
   a 20s ping, `GET /healthz`. CORS locked to `CONSOLE_ORIGIN`, `slowapi`
   rate limit (10/min) on the chaos endpoints.
 - **Schema**: `aegis.incidents` and `aegis.incident_events` created by
@@ -79,8 +79,8 @@ diff against.
   shape forward-compatible rather than omitting the fields.
 - **No `verify-chain` endpoint yet.** plan/04 describes it, but phase 1's
   explicit build order (step 5) lists exactly `GET /incidents`, `GET
-  /incidents/{id}`, `GET /incidents/{id}/events`, `WS /ws/events`, `GET
-  /healthz`. Verified the chain by hand instead (script run against the
+/incidents/{id}`, `GET /incidents/{id}/events`, `WS /ws/events`, `GET
+/healthz`. Verified the chain by hand instead (script run against the
   live stack, see below); the real endpoint is a phase 3 acceptance item.
 - **Sustain/fail-count state is in-process** (`DetectionState` in
   `loop.py`), not persisted. A worker restart mid-sustain-window forgets
@@ -131,13 +131,13 @@ window the fault sits when it starts, which is why latency and cache_outage
 run longer than 30s here. All five fired well inside the compose
 healthcheck/dedupe machinery working as designed, chain valid throughout:
 
-| scenario | inject -> detect | rule that fired |
-|---|---|---|
-| latency | 55s | `latency_p95` on target-orders, target-gateway |
-| crash | 16s | `service_down` on target-payments |
-| error_spike | 31s | `error_rate` on target-payments |
-| memory_leak | 35s (18s to OOM + 17s to detect) | `error_rate` then `service_down` on target-payments |
-| cache_outage | 62s (target-orders); target-gateway's `error_rate` fired earlier but from a residual blip, not this injection | `latency_p95` on target-orders |
+| scenario     | inject -> detect                                                                                              | rule that fired                                     |
+| ------------ | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| latency      | 55s                                                                                                           | `latency_p95` on target-orders, target-gateway      |
+| crash        | 16s                                                                                                           | `service_down` on target-payments                   |
+| error_spike  | 31s                                                                                                           | `error_rate` on target-payments                     |
+| memory_leak  | 35s (18s to OOM + 17s to detect)                                                                              | `error_rate` then `service_down` on target-payments |
+| cache_outage | 62s (target-orders); target-gateway's `error_rate` fired earlier but from a residual blip, not this injection | `latency_p95` on target-orders                      |
 
 ## Verification output
 
