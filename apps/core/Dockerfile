@@ -12,7 +12,6 @@ WORKDIR /app
 COPY apps/core/pyproject.toml ./
 COPY apps/core/aegis ./aegis
 COPY apps/core/fixtures ./fixtures
-COPY scripts/verify_chain.py ./scripts/verify_chain.py
 
 RUN pip install --no-cache-dir .
 
