@@ -243,6 +243,84 @@ async def get_catalog() -> dict[str, Any]:
     }
 
 
+@app.get("/api/metrics/summary")
+async def metrics_summary() -> dict[str, Any]:
+    """plan/02-contracts.md: "MTTR trend, autonomy rate, escalation rate,
+    cost per incident, per scenario." Not implemented in phase 2/3 (nothing
+    read it yet); the console's metrics strip and /metrics page are the
+    first consumers, so this is built now against the tables those phases
+    already populate. `source_rule` (the detection rule id, e.g.
+    latency_p95/error_rate/service_down) stands in for "scenario": the
+    schema has no dedicated scenario column and several scenarios share a
+    rule (plan/03's crash/memory_leak disambiguation, both service_down),
+    so this is the closest real grouping key rather than an invented one.
+    """
+    async with db.connection() as conn:
+        incidents = await conn.fetch(
+            "SELECT id, source_rule, status, autonomy, mttr_seconds, resolved_at, started_at "
+            "FROM aegis.incidents ORDER BY started_at ASC"
+        )
+        cost_rows = await conn.fetch(
+            "SELECT incident_id, SUM(cost_usd) AS cost_usd FROM aegis.agent_runs "
+            "GROUP BY incident_id"
+        )
+        loop_rows = await conn.fetch(
+            "SELECT incident_id, COUNT(*) AS n FROM aegis.incident_events "
+            "WHERE type IN ('verify.passed', 'verify.failed') GROUP BY incident_id"
+        )
+    cost_by_incident = {r["incident_id"]: float(r["cost_usd"] or 0) for r in cost_rows}
+    loops_by_incident = {r["incident_id"]: r["n"] for r in loop_rows}
+
+    resolved = [r for r in incidents if r["status"] == "resolved" and r["mttr_seconds"] is not None]
+    escalated_rows = [r for r in incidents if r["status"] == "escalated"]
+    active = sum(1 for r in incidents if r["status"] in ("open", "resolving", "awaiting_approval"))
+    today = datetime.now(UTC).date()
+    cost_today = sum(
+        cost_by_incident.get(r["id"], 0.0)
+        for r in incidents
+        if r["started_at"] is not None and r["started_at"].astimezone(UTC).date() == today
+    )
+    autonomy_counts = {"auto": 0, "approved": 0, "escalated": 0}
+    for r in incidents:
+        if r["autonomy"] in autonomy_counts:
+            autonomy_counts[r["autonomy"]] += 1
+    total_terminal = len(resolved) + len(escalated_rows)
+    mttr_avg = (
+        sum(r["mttr_seconds"] for r in resolved) / len(resolved) if resolved else None
+    )
+
+    return {
+        "mttr_avg_seconds": mttr_avg,
+        "active_incidents": active,
+        "cost_today_usd": round(cost_today, 5),
+        "autonomy": autonomy_counts,
+        "escalation_rate": (len(escalated_rows) / total_terminal) if total_terminal else 0.0,
+        "mttr_trend": [
+            {
+                "incident_id": r["id"],
+                "source_rule": r["source_rule"],
+                "resolved_at": format_ts(r["resolved_at"]),
+                "mttr_seconds": r["mttr_seconds"],
+            }
+            for r in resolved
+        ],
+        "cost_per_incident": [
+            {
+                "incident_id": r["id"],
+                "source_rule": r["source_rule"],
+                "cost_usd": round(cost_by_incident.get(r["id"], 0.0), 5),
+            }
+            for r in incidents
+            if r["id"] in cost_by_incident
+        ],
+        "loop_iterations": [
+            {"incident_id": r["id"], "loops": loops_by_incident.get(r["id"], 0)}
+            for r in incidents
+            if r["id"] in loops_by_incident
+        ],
+    }
+
+
 @app.get("/api/incidents/{incident_id}/verify-chain")
 async def verify_chain(incident_id: str) -> dict[str, Any]:
     async with db.connection() as conn:

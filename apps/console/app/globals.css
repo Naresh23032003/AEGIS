@@ -1,12 +1,78 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0a0a0a;
-  --foreground: #e5e5e5;
+  --aegis-bg: #050607;
+  --aegis-surface: #0b0e11;
+  --aegis-surface-raised: #12161b;
+  --aegis-border: #1e242c;
+  --aegis-text: #e6edf3;
+  --aegis-text-secondary: #8b98a5;
+  --aegis-accent: #22d3ee;
+  --aegis-warn: #f59e0b;
+  --aegis-critical: #f43f5e;
+  --aegis-success: #34d399;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  background: var(--aegis-bg);
+  color: var(--aegis-text);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-mono-data {
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+a,
+button,
+[role="button"],
+input[type="checkbox"],
+summary {
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--aegis-accent);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--aegis-accent);
+  color: var(--aegis-bg);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--aegis-surface);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--aegis-border);
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

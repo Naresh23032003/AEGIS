@@ -1,5 +1,15 @@
 import type { Metadata } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
+
+import { NavBar } from "./components/NavBar";
+import { CommandPalette } from "./components/CommandPalette";
+import { LiveConnection } from "./components/LiveConnection";
+import { ApprovalOverlays } from "./components/ApprovalOverlays";
+import { DesktopOnlyGate } from "./components/DesktopOnlyGate";
 import "./globals.css";
+
+const geistSans = Geist({ variable: "--font-sans", subsets: ["latin"] });
+const geistMono = Geist_Mono({ variable: "--font-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "AEGIS",
@@ -13,7 +23,17 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body className={`${geistSans.variable} ${geistMono.variable}`}>
+        <LiveConnection />
+        <div className="flex h-screen flex-col">
+          <NavBar />
+          <div className="min-h-0 flex-1">
+            <DesktopOnlyGate>{children}</DesktopOnlyGate>
+          </div>
+        </div>
+        <CommandPalette />
+        <ApprovalOverlays />
+      </body>
     </html>
   );
 }
