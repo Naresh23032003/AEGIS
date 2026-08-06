@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import asyncpg
+import redis.exceptions
 from ulid import ULID
 
 from aegis.chain import next_hash
@@ -91,13 +92,24 @@ async def emit(
         hash_,
         now,
     )
-    redis = get_redis()
+    redis_client = get_redis()
     try:
-        await asyncio.wait_for(redis.xadd(STREAM_KEY, {"data": json.dumps(envelope)}), timeout=2)
-    except (TimeoutError, OSError) as exc:
-        # Postgres is the source of truth for the chain; a stalled Redis
-        # (e.g. the cache_outage scenario pauses the same container that
-        # carries the event stream) must never lose an already-committed
-        # event, only delay its live delivery. Replay on reconnect covers it.
+        await asyncio.wait_for(
+            redis_client.xadd(STREAM_KEY, {"data": json.dumps(envelope)}), timeout=2
+        )
+    except (TimeoutError, OSError, redis.exceptions.RedisError) as exc:
+        # Postgres is the source of truth for the chain; a stalled or
+        # disrupted Redis (e.g. the cache_outage scenario pausing, or later
+        # unpausing, the same container that carries the event stream, which
+        # resets any connection the pool was mid-read on) must never lose an
+        # already-committed event, only delay its live delivery. Replay on
+        # reconnect covers it. redis.exceptions.RedisError is the one that
+        # actually matters here: found live, a redis.exceptions.ConnectionError
+        # (raised well after redis comes back from a pause, on a connection
+        # the pool had open across it) is neither TimeoutError nor OSError,
+        # so it used to propagate out of this function; when that happened
+        # inside _mark_escalated_on_crash's transaction (aegis.agents.graph),
+        # the whole transaction rolled back and the incident it was trying to
+        # escalate was left stuck in its prior status forever, silently.
         logger.warning("failed to publish event %s to redis stream: %s", envelope["id"], exc)
     return envelope
