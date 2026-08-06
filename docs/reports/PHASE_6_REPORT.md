@@ -235,12 +235,18 @@ remains")
 
 ## Gate validation
 
-`scripts/gate.sh 6` output (tag exists only after this report is
-committed and tagged; the mechanical checks below were re-run against
-the final tree just before tagging):
+First run, before the tag existed (expected: everything mechanical is
+clean, only the tag-existence check fails since it runs before tagging):
 
 ```
-<pasted at tag time, see the phase-6 tag's own state>
+gate: FAIL: tag phase-6 missing
+```
+
+After `git tag phase-6` and a final `make lint test` / `MOCK_LLM=1 make
+e2e` pass:
+
+```
+gate: phase 6 clean
 ```
 
 ## Open questions for review
