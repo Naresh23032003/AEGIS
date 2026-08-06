@@ -1,0 +1,44 @@
+{
+  "$id": "incident.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Incident",
+  "description": "Mirrors the incidents table in plan/02-contracts.md, Database schema.",
+  "type": "object",
+  "properties": {
+    "id": { "type": "string" },
+    "title": { "type": "string" },
+    "severity": {
+      "oneOf": [{ "type": "string", "enum": ["sev1", "sev2", "sev3"] }, { "type": "null" }]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["open", "resolving", "awaiting_approval", "resolved", "escalated"]
+    },
+    "source_rule": { "type": "string" },
+    "affected_services": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "started_at": { "type": "string", "format": "date-time" },
+    "resolved_at": { "type": ["string", "null"], "format": "date-time" },
+    "mttr_seconds": { "type": ["integer", "null"] },
+    "autonomy": {
+      "oneOf": [{ "type": "string", "enum": ["auto", "approved", "escalated"] }, { "type": "null" }]
+    },
+    "summary": { "type": ["string", "null"] }
+  },
+  "required": [
+    "id",
+    "title",
+    "severity",
+    "status",
+    "source_rule",
+    "affected_services",
+    "started_at",
+    "resolved_at",
+    "mttr_seconds",
+    "autonomy",
+    "summary"
+  ],
+  "additionalProperties": false
+}

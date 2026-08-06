@@ -1,0 +1,45 @@
+{
+  "$id": "action-proposal.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ActionProposal",
+  "description": "One proposed remediation action. Mirrors the action.proposed payload highlights in plan/02-contracts.md, Event catalog, and the actions table tier/status columns.",
+  "type": "object",
+  "properties": {
+    "action_id": { "type": "string" },
+    "catalog_key": {
+      "type": "string",
+      "description": "Key into the closed action catalog, plan/03-agents-and-policy.md, Action catalog."
+    },
+    "params": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "tier": {
+      "type": "string",
+      "enum": ["green", "yellow", "red"]
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "reasoning": {
+      "type": "string",
+      "maxLength": 600
+    },
+    "rollback_key": {
+      "type": ["string", "null"],
+      "description": "catalog_key of the action that undoes this one, if any."
+    }
+  },
+  "required": [
+    "action_id",
+    "catalog_key",
+    "params",
+    "tier",
+    "confidence",
+    "reasoning",
+    "rollback_key"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,49 @@
+{
+  "$id": "incident-state.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "IncidentState",
+  "description": "LangGraph state object for one durable agent run. plan/03-agents-and-policy.md, Agent graph.",
+  "type": "object",
+  "properties": {
+    "incident": { "$ref": "incident.schema.json" },
+    "evidence": {
+      "type": "array",
+      "items": { "$ref": "evidence.schema.json" }
+    },
+    "hypothesis": { "type": ["string", "null"] },
+    "proposed_actions": {
+      "type": "array",
+      "items": { "$ref": "action-proposal.schema.json" }
+    },
+    "executed_actions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "verification": {
+      "oneOf": [{ "$ref": "verify-result.schema.json" }, { "type": "null" }]
+    },
+    "loop_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3,
+      "description": "Hard max 3."
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Set by diagnosis."
+    }
+  },
+  "required": [
+    "incident",
+    "evidence",
+    "hypothesis",
+    "proposed_actions",
+    "executed_actions",
+    "verification",
+    "loop_count",
+    "confidence"
+  ],
+  "additionalProperties": false
+}

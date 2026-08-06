@@ -1,0 +1,27 @@
+{
+  "$id": "evidence.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Evidence",
+  "description": "One item of diagnosis evidence: a log line, metric snapshot, or trace summary with a source ref (plan/03-agents-and-policy.md, Agent graph). Field shape is not spelled out in the plan beyond this description; kept deliberately minimal, see PHASE_0_REPORT.md.",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": ["log", "metric", "trace"]
+    },
+    "source": {
+      "type": "string",
+      "description": "Tool that produced this evidence, e.g. query_logs, query_metrics, query_traces, get_container_stats."
+    },
+    "ref": {
+      "type": "string",
+      "description": "Opaque reference back to the source system (Loki query, Prometheus range, Tempo trace id)."
+    },
+    "content": {
+      "type": "string",
+      "description": "Truncated, quarantine-wrapped tool output. See plan/04-security.md."
+    }
+  },
+  "required": ["kind", "source", "ref", "content"],
+  "additionalProperties": false
+}

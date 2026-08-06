@@ -1,0 +1,17 @@
+{
+  "$id": "verify-result.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VerifyResult",
+  "description": "Result of the verify node. Mirrors verify.passed / verify.failed payload highlights in plan/02-contracts.md, Event catalog.",
+  "type": "object",
+  "properties": {
+    "passed": { "type": "boolean" },
+    "evidence": {
+      "type": "array",
+      "items": { "$ref": "evidence.schema.json" }
+    },
+    "loop_count": { "type": "integer", "minimum": 0, "maximum": 3 }
+  },
+  "required": ["passed", "evidence", "loop_count"],
+  "additionalProperties": false
+}

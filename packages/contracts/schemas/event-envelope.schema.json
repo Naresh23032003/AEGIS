@@ -1,0 +1,35 @@
+{
+  "$id": "event-envelope.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EventEnvelope",
+  "description": "Envelope for every event on the aegis:events Redis stream and in incident_events. See plan/02-contracts.md, Event envelope.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "ULID"
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "type": {
+      "type": "string",
+      "description": "Event type from the catalog in plan/02-contracts.md. Not an enum here because the catalog grows across phases; validate against the catalog in code review, not this schema."
+    },
+    "incident_id": {
+      "type": "string"
+    },
+    "actor": {
+      "type": "string",
+      "description": "Namespaced: agent:diagnosis | agent:remediation | system:detector | human:<pubkey8> | system:supervisor"
+    },
+    "payload": {
+      "type": "object",
+      "description": "Shape defined per event type in packages/contracts/events/.",
+      "additionalProperties": true
+    }
+  },
+  "required": ["id", "ts", "type", "incident_id", "actor", "payload"],
+  "additionalProperties": false
+}
