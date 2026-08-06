@@ -6,6 +6,7 @@ import { Command } from "cmdk";
 import { AlertTriangle, ExternalLink, LayoutGrid, Search, Zap } from "lucide-react";
 
 import { API_URL, injectChaos, listIncidents, type IncidentSummary } from "../lib/api";
+import { VIEW_CHANGED_EVENT } from "../lib/viewParam";
 
 const GRAFANA_URL = process.env.NEXT_PUBLIC_GRAFANA_URL ?? "http://localhost:3001";
 
@@ -92,9 +93,11 @@ export function CommandPalette() {
               label="Toggle 2D / 3D topology"
               onSelect={() => {
                 const url = new URL(window.location.href);
-                const next = url.searchParams.get("view") === "3d" ? "2d" : "3d";
+                const current = url.searchParams.get("view") ?? "3d";
+                const next = current === "3d" ? "2d" : "3d";
                 url.searchParams.set("view", next);
                 router.push(url.pathname + url.search);
+                window.dispatchEvent(new Event(VIEW_CHANGED_EVENT));
                 close();
               }}
             />
