@@ -136,13 +136,13 @@ def _timeline_table(events: list[asyncpg.Record]) -> Table:
         rows.append(
             [
                 str(row["seq"]),
-                format_ts(row["created_at"]),
-                row["type"],
-                row["actor"],
+                _cell(format_ts(row["created_at"])),
+                _cell(row["type"]),
+                _cell(row["actor"]),
                 _cell(json.dumps(payload, sort_keys=True)),
             ]
         )
-    table = Table(rows, colWidths=[10 * mm, 30 * mm, 32 * mm, 28 * mm, 70 * mm], repeatRows=1)
+    table = Table(rows, colWidths=[10 * mm, 24 * mm, 30 * mm, 26 * mm, 80 * mm], repeatRows=1)
     table.setStyle(_TABLE_HEAD_STYLE)
     return table
 
@@ -160,10 +160,10 @@ def _actions_table(actions: list[asyncpg.Record]) -> Table:
         rows.append(
             [
                 _cell(row["id"]),
-                row["catalog_key"],
-                row["tier"],
-                row["status"],
-                f"{row['confidence']:.2f}" if row["confidence"] is not None else "-",
+                _cell(row["catalog_key"]),
+                _cell(row["tier"]),
+                _cell(row["status"]),
+                _cell(f"{row['confidence']:.2f}" if row["confidence"] is not None else "-"),
                 _cell(f"{decision} ({rule_id})"),
                 _cell(json.dumps(result, sort_keys=True) if result else "-"),
             ]
@@ -180,10 +180,10 @@ def _approvals_table(approvals: list[asyncpg.Record]) -> Table:
         rows.append(
             [
                 _cell(row["action_id"]),
-                row["decision"],
-                fingerprint(row["approver_pubkey"]),
+                _cell(row["decision"]),
+                _cell(fingerprint(row["approver_pubkey"])),
                 _cell(row["signature"][:32] + "..."),
-                format_ts(row["created_at"]),
+                _cell(format_ts(row["created_at"])),
             ]
         )
     table = Table(rows, colWidths=[24 * mm, 20 * mm, 34 * mm, 46 * mm, 36 * mm], repeatRows=1)
@@ -198,14 +198,14 @@ def _agent_runs_table(agent_runs: list[asyncpg.Record]) -> Table:
     for row in agent_runs:
         rows.append(
             [
-                row["agent"],
-                row["status"],
-                row["model"] or "-",
+                _cell(row["agent"]),
+                _cell(row["status"]),
+                _cell(row["model"] or "-"),
                 str(row["tokens_in"]),
                 str(row["tokens_out"]),
                 f"{float(row['cost_usd']):.5f}",
-                format_ts(row["started_at"]),
-                format_ts(row["ended_at"]) if row["ended_at"] else "-",
+                _cell(format_ts(row["started_at"])),
+                _cell(format_ts(row["ended_at"]) if row["ended_at"] else "-"),
             ]
         )
     table = Table(
