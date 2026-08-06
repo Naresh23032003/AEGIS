@@ -12,35 +12,19 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
 import httpx
-import yaml
 from ulid import ULID
 
 from aegis import db
+from aegis.detection.probes import SERVICE_HEALTHZ, load_rules, probe_healthz, query_prometheus
 from aegis.events import emit
 
 logger = logging.getLogger("aegis.detection")
 
-RULES_PATH = Path(__file__).parent / "rules.yaml"
 POLL_SECONDS = 5
-
-PROMETHEUS_URL = os.environ.get("PROMETHEUS_URL", "http://lgtm:9090")
-SERVICE_HEALTHZ = {
-    "target-gateway": f"{os.environ.get('GATEWAY_URL', 'http://target-gateway:9000')}/healthz",
-    "target-orders": f"{os.environ.get('ORDERS_URL', 'http://target-orders:9001')}/healthz",
-    "target-payments": f"{os.environ.get('PAYMENTS_URL', 'http://target-payments:9002')}/healthz",
-}
-
-
-def load_rules() -> dict[str, Any]:
-    with RULES_PATH.open() as f:
-        loaded: dict[str, Any] = yaml.safe_load(f)
-        return loaded
 
 
 class DetectionState:
@@ -51,27 +35,6 @@ class DetectionState:
     def __init__(self) -> None:
         self.sustain_since: dict[tuple[str, str], float] = {}
         self.fail_counts: dict[str, int] = {}
-
-
-async def _query_prometheus(client: httpx.AsyncClient, promql: str) -> dict[str, float]:
-    resp = await client.get(f"{PROMETHEUS_URL}/api/v1/query", params={"query": promql})
-    resp.raise_for_status()
-    result = resp.json()["data"]["result"]
-    values: dict[str, float] = {}
-    for series in result:
-        service = series["metric"].get("service_name")
-        if service is None:
-            continue
-        values[service] = float(series["value"][1])
-    return values
-
-
-async def _probe_healthz(client: httpx.AsyncClient, url: str) -> bool:
-    try:
-        resp = await client.get(url, timeout=2.0)
-        return resp.status_code == 200
-    except httpx.HTTPError:
-        return False
 
 
 async def _incident_open(conn: Any, source_rule: str, service: str) -> bool:
@@ -115,7 +78,7 @@ async def _poll_service_down(
     client: httpx.AsyncClient, rule: dict[str, Any], state: DetectionState
 ) -> None:
     for service, url in SERVICE_HEALTHZ.items():
-        ok = await _probe_healthz(client, url)
+        ok = await probe_healthz(client, url)
         key = f"service_down:{service}"
         if ok:
             state.fail_counts[key] = 0
@@ -136,7 +99,7 @@ async def _poll_threshold_rule(
 ) -> None:
     promql = queries[rule["query"]]
     try:
-        values = await _query_prometheus(client, promql)
+        values = await query_prometheus(client, promql)
     except httpx.HTTPError as exc:
         logger.warning("prometheus query failed for rule %s: %s", rule["id"], exc)
         return
