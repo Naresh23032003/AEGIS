@@ -21,10 +21,11 @@ from typing import Any
 
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph import END, START, StateGraph
+from langgraph.types import Command
 
 from aegis import db, llm
 from aegis.agents import nodes
-from aegis.agents.state import AgentState, initial_state
+from aegis.agents.state import AgentState, initial_state, resolve_scenario_hint
 from aegis.events import emit
 
 logger = logging.getLogger("aegis.agents.graph")
@@ -98,6 +99,10 @@ async def _mark_escalated_on_crash(incident_id: str, exc: Exception) -> None:
         )
 
 
+def _graph_config(incident_id: str) -> dict[str, Any]:
+    return {"configurable": {"thread_id": incident_id}, "recursion_limit": RECURSION_LIMIT}
+
+
 async def run_incident(
     graph: Any, *, incident: dict[str, Any], detection_snapshot: dict[str, Any]
 ) -> None:
@@ -106,12 +111,19 @@ async def run_incident(
     if incident.get("started_at") and isinstance(incident["started_at"], datetime):
         incident = {**incident, "started_at": incident["started_at"].isoformat()}
     llm.reset_fixture_counters()
-    state = initial_state(incident=incident, detection_snapshot=detection_snapshot)
+    scenario_hint = await resolve_scenario_hint(
+        source_rule=incident["source_rule"],
+        affected_services=incident.get("affected_services") or [],
+    )
+    state = initial_state(
+        incident=incident, detection_snapshot=detection_snapshot, scenario_hint=scenario_hint
+    )
     try:
-        await graph.ainvoke(
-            state,
-            config={"configurable": {"thread_id": incident_id}, "recursion_limit": RECURSION_LIMIT},
-        )
+        # A gate node reaching interrupt() (a red-tier proposal awaiting
+        # approval) makes ainvoke return normally with "__interrupt__" in
+        # the result, not raise; the run is legitimately parked, and there
+        # is nothing further to do here (see resume_parked_run below).
+        await graph.ainvoke(state, config=_graph_config(incident_id))
     except Exception as exc:  # noqa: BLE001 - never leave an incident stuck mid-run
         await _mark_escalated_on_crash(incident_id, exc)
 
@@ -119,11 +131,26 @@ async def run_incident(
 async def resume_incident(graph: Any, *, incident_id: str) -> None:
     """Continue a run left mid-flight by a killed worker process. Passing
     None as input tells LangGraph to resume from the thread's last
-    checkpoint rather than start over."""
+    completed checkpoint rather than start over. Not for resuming a red-tier
+    approval interrupt (see resume_parked_run): a plain crash never leaves a
+    thread paused at interrupt() (nothing is "waiting", the process just
+    died mid-node), so this always re-runs the last incomplete node from
+    scratch."""
     try:
-        await graph.ainvoke(
-            None,
-            config={"configurable": {"thread_id": incident_id}, "recursion_limit": RECURSION_LIMIT},
-        )
+        await graph.ainvoke(None, config=_graph_config(incident_id))
+    except Exception as exc:  # noqa: BLE001 - never leave an incident stuck mid-run
+        await _mark_escalated_on_crash(incident_id, exc)
+
+
+async def resume_parked_run(graph: Any, *, incident_id: str) -> None:
+    """Wake a run parked at gate's interrupt() for a red-tier approval
+    (aegis.agents.nodes.gate). The resume value itself is a throwaway: the
+    action's outcome (approved/rejected/timed out) is read back from the
+    actions table, not from this payload, so POST /approvals (a different
+    process, core-api) only ever needs to update the database; this call
+    is what actually wakes the paused graph in core-worker (see
+    aegis.worker's approval dispatch loop)."""
+    try:
+        await graph.ainvoke(Command(resume="continue"), config=_graph_config(incident_id))
     except Exception as exc:  # noqa: BLE001 - never leave an incident stuck mid-run
         await _mark_escalated_on_crash(incident_id, exc)

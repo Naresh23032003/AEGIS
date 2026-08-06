@@ -1,5 +1,7 @@
-"""escalate node: code, not LLM. Reached when loop_count exceeds 3 or the
-gate structurally denies every proposed action (see gate.py)."""
+"""escalate node: code, not LLM. Reached when loop_count exceeds 3 or gate
+allowed none of the proposed actions (denied by OPA, vetoed, rejected, or
+timed out unanswered; see gate.py, which sets escalate_reason on the state
+for exactly this node to report)."""
 
 from __future__ import annotations
 
@@ -16,7 +18,7 @@ async def escalate(state: AgentState) -> dict[str, Any]:
     reason = (
         "loop_count exceeded max 3"
         if loop_count > 3
-        else "gate denied every proposed action (tier gating arrives in phase 3)"
+        else state.get("escalate_reason") or "gate allowed no proposed action"
     )
 
     async with db.connection() as conn, conn.transaction():
