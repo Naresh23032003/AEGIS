@@ -92,6 +92,7 @@ async def run_tool_loop(
             messages=messages,
             tools=[*tool_specs, submit_spec],
             scenario=scenario,
+            incident_id=incident_id,
         )
         total_usage = llm.Usage(
             tokens_in=total_usage.tokens_in + turn.usage.tokens_in,

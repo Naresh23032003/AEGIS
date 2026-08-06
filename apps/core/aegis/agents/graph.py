@@ -23,7 +23,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command
 
-from aegis import db, llm
+from aegis import db
 from aegis.agents import nodes
 from aegis.agents.state import AgentState, initial_state, resolve_scenario_hint
 from aegis.events import emit
@@ -106,11 +106,15 @@ def _graph_config(incident_id: str) -> dict[str, Any]:
 async def run_incident(
     graph: Any, *, incident: dict[str, Any], detection_snapshot: dict[str, Any]
 ) -> None:
-    """Fresh start for a newly detected incident."""
+    """Fresh start for a newly detected incident. Does not call
+    llm.reset_fixture_counters(): that clears every incident's mock-fixture
+    counters, not just this one's, which corrupts any other incident still
+    in flight in the same process (found live, see llm.py's module
+    docstring). Fixture counters are now keyed by incident_id, so a new
+    incident's sequence starts at 1 on its own; nothing to reset here."""
     incident_id = incident["id"]
     if incident.get("started_at") and isinstance(incident["started_at"], datetime):
         incident = {**incident, "started_at": incident["started_at"].isoformat()}
-    llm.reset_fixture_counters()
     scenario_hint = await resolve_scenario_hint(
         source_rule=incident["source_rule"],
         affected_services=incident.get("affected_services") or [],

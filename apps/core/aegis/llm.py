@@ -4,7 +4,11 @@ plan/01-architecture.md: all calls go through this module so the vendor is
 swappable in one file. plan/03-agents-and-policy.md, Mock mode: MOCK_LLM=1
 serves recorded fixtures from apps/core/fixtures/<scenario>/<node>_<n>.json,
 keyed by scenario and call order, so CI and the offline demo never touch
-the network.
+the network. The call-order counter is further scoped per incident_id
+(found live in phase 4: two incidents sharing a scenario and running
+concurrently used to share one counter and desync each other's fixture
+index), so it stays correct with any number of incidents in flight at
+once.
 
 The primitive here is a "turn": one request to the model that returns zero
 or more tool calls (OpenAI-style function calling, tool_choice="required"
@@ -195,10 +199,21 @@ async def _call_live(
 
 @dataclass
 class _FixtureCounters:
-    counts: dict[tuple[str, str], int] = field(default_factory=dict)
+    """Keyed by (incident_id, scenario, node), not just (scenario, node).
+    Found live in phase 4's CI reproduction: two incidents sharing a
+    scenario (either two seeded red_tier_test incidents in the same
+    e2e/test_approvals.py run, or two independently detected incidents
+    that happen to resolve to the same scenario hint) running
+    concurrently in the same core-worker process used to share one
+    counter, so the second incident's Nth call replayed (or requested) a
+    fixture recorded for the first incident's Nth call instead of its
+    own. incident_id makes every incident's sequence independent
+    regardless of what else is running."""
 
-    def next_index(self, scenario: str, node: str) -> int:
-        key = (scenario, node)
+    counts: dict[tuple[str, str, str], int] = field(default_factory=dict)
+
+    def next_index(self, incident_id: str, scenario: str, node: str) -> int:
+        key = (incident_id, scenario, node)
         self.counts[key] = self.counts.get(key, 0) + 1
         return self.counts[key]
 
@@ -211,9 +226,12 @@ _record_counters = _FixtureCounters()
 
 
 def reset_fixture_counters() -> None:
-    """Called once per fresh graph run so fixture numbering restarts at 1.
-    Module-level state; the demo runs one scenario at a time (see phase 2
-    report), so this is not safe for concurrent runs of the same scenario."""
+    """Clears every incident's counters. Production code no longer calls
+    this: with counters keyed by incident_id, a new incident's sequence
+    starts at 1 on its own (an unseen key defaults to 0), and clearing
+    the whole table would zero out any other incident's progress mid-run.
+    Kept for apps/core/tests/test_llm_mock.py, which wants a clean slate
+    between isolated test cases."""
     _mock_counters.reset()
     _record_counters.reset()
 
@@ -222,10 +240,10 @@ def fixture_path(scenario: str, node: str, index: int) -> Path:
     return FIXTURES_DIR / scenario / f"{node}_{index}.json"
 
 
-def _call_mock(*, node: str, scenario: str | None) -> AssistantTurn:
+def _call_mock(*, node: str, scenario: str | None, incident_id: str) -> AssistantTurn:
     if not scenario:
         raise RuntimeError(f"MOCK_LLM=1 but no scenario set for node {node}")
-    index = _mock_counters.next_index(scenario, node)
+    index = _mock_counters.next_index(incident_id, scenario, node)
     path = fixture_path(scenario, node, index)
     if not path.exists():
         raise FileNotFoundError(
@@ -239,10 +257,10 @@ def _call_mock(*, node: str, scenario: str | None) -> AssistantTurn:
     return AssistantTurn(calls=calls, usage=Usage())
 
 
-def _record(*, node: str, scenario: str | None, turn: AssistantTurn) -> None:
+def _record(*, node: str, scenario: str | None, incident_id: str, turn: AssistantTurn) -> None:
     if os.environ.get("RECORD_FIXTURES") != "1" or not scenario:
         return
-    index = _record_counters.next_index(scenario, node)
+    index = _record_counters.next_index(incident_id, scenario, node)
     path = fixture_path(scenario, node, index)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {"calls": [{"name": c.name, "arguments": c.arguments} for c in turn.calls]}
@@ -257,16 +275,17 @@ async def call_turn(
     messages: list[dict[str, Any]],
     tools: list[dict[str, Any]],
     scenario: str | None,
+    incident_id: str,
 ) -> AssistantTurn:
     """One model turn. Live: real Groq call with 429 backoff and one
     schema-invalid retry. Mock: replays the next recorded fixture for
-    (scenario, node). Tools always execute live in the caller's loop
-    (aegis.agents.tool_loop) regardless of MOCK_LLM; only the model's
-    decisions are mocked."""
+    (incident_id, scenario, node). Tools always execute live in the
+    caller's loop (aegis.agents.tool_loop) regardless of MOCK_LLM; only
+    the model's decisions are mocked."""
     if mock_enabled():
-        return _call_mock(node=node, scenario=scenario)
+        return _call_mock(node=node, scenario=scenario, incident_id=incident_id)
     turn = await _call_live(model=model, messages=messages, tools=tools)
-    _record(node=node, scenario=scenario, turn=turn)
+    _record(node=node, scenario=scenario, incident_id=incident_id, turn=turn)
     return turn
 
 
