@@ -1,0 +1,14 @@
+{
+  "calls": [
+    {
+      "arguments": {
+        "affected_services": [
+          "target-orders"
+        ],
+        "severity": "sev2",
+        "summary": "p95 latency on target-orders is 4916.666666666667 seconds, exceeding the threshold of 1000.0 seconds."
+      },
+      "name": "submit_triage"
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "calls": [
+    {
+      "arguments": {
+        "actions": [
+          {
+            "catalog_key": "remove_toxic",
+            "confidence": 0.9,
+            "params": {
+              "toxic_name": "orders_shopdb_latency"
+            },
+            "reasoning": "The hypothesis identifies a Toxiproxy toxic named orders_shopdb_latency as the source of added latency between target-orders and its DB. Removing this toxic directly eliminates the artificial delay, likely restoring normal p95 latency for target-gateway.",
+            "rollback_key": null
+          }
+        ]
+      },
+      "name": "submit_plan"
+    }
+  ]
+}

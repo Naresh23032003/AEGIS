@@ -54,12 +54,13 @@ lint-ts:
 	npm run lint
 	npm run format:check
 
-# e2e targets: no scenario suite yet (arrives phase 1-3). Exit 0 so CI stays green.
+# e2e: scenario suite against a running stack (`make up` first). MOCK_LLM
+# is inherited from the shell so `MOCK_LLM=1 make e2e` runs on fixtures.
 e2e:
-	@echo "no e2e tests yet (phase 0)"
+	$(PY) -m pytest e2e -q
 
 e2e-live:
-	@echo "no e2e tests yet (phase 0)"
+	MOCK_LLM=0 $(PY) -m pytest e2e -q
 
 record-fixtures:
-	@echo "no fixtures to record yet (phase 2)"
+	$(PY) scripts/record_fixtures.py $(SCENARIO)

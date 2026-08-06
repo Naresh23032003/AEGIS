@@ -1,0 +1,10 @@
+{
+  "calls": [
+    {
+      "arguments": {
+        "service": "target-orders"
+      },
+      "name": "query_logs"
+    }
+  ]
+}

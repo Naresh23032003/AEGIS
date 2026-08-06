@@ -1,0 +1,14 @@
+{
+  "calls": [
+    {
+      "arguments": {
+        "affected_services": [
+          "target-gateway"
+        ],
+        "severity": "sev2",
+        "summary": "Error rate on target-gateway is 76.04%."
+      },
+      "name": "submit_triage"
+    }
+  ]
+}

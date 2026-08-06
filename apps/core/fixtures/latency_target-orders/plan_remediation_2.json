@@ -1,0 +1,20 @@
+{
+  "calls": [
+    {
+      "arguments": {
+        "actions": [
+          {
+            "catalog_key": "remove_toxic",
+            "confidence": 0.9,
+            "params": {
+              "toxic_name": "orders_shopdb_latency"
+            },
+            "reasoning": "The hypothesis identifies a toxic named orders_shopdb_latency on the shopdb proxy as the source of extreme latency. Removing this toxic directly eliminates the artificial delay, addressing the root cause of the p95 latency spike.",
+            "rollback_key": null
+          }
+        ]
+      },
+      "name": "submit_plan"
+    }
+  ]
+}

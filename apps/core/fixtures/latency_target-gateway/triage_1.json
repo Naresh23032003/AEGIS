@@ -1,0 +1,14 @@
+{
+  "calls": [
+    {
+      "arguments": {
+        "affected_services": [
+          "target-gateway"
+        ],
+        "severity": "sev2",
+        "summary": "p95 latency on target-gateway is 7250.0ms, exceeding the threshold of 1000.0ms."
+      },
+      "name": "submit_triage"
+    }
+  ]
+}

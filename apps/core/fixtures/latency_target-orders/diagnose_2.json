@@ -1,0 +1,10 @@
+{
+  "calls": [
+    {
+      "arguments": {
+        "service": "target-gateway"
+      },
+      "name": "query_logs"
+    }
+  ]
+}

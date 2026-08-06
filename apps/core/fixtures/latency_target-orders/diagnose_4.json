@@ -1,0 +1,17 @@
+{
+  "calls": [
+    {
+      "arguments": {
+        "confidence": 0.87,
+        "evidence_refs": [
+          "query_metrics(target-orders)",
+          "query_metrics(target-gateway)",
+          "get_container_stats(target-orders)",
+          "query_traces(target-orders)"
+        ],
+        "hypothesis": "A misbehaving proxy between target-orders and its database is introducing extreme latency, causing target-orders p95 latency to blow up and downstream gateway errors."
+      },
+      "name": "submit_diagnosis"
+    }
+  ]
+}

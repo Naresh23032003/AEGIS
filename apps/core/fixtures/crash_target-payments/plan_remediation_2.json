@@ -1,0 +1,20 @@
+{
+  "calls": [
+    {
+      "arguments": {
+        "actions": [
+          {
+            "catalog_key": "restart_service",
+            "confidence": 0.96,
+            "params": {
+              "service": "target-payments"
+            },
+            "reasoning": "The hypothesis states the target-payments container has exited, causing health checks to fail. Restarting the service directly brings the container back up, restoring its health endpoint and resolving the downtime.",
+            "rollback_key": null
+          }
+        ]
+      },
+      "name": "submit_plan"
+    }
+  ]
+}

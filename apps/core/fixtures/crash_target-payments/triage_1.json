@@ -1,0 +1,14 @@
+{
+  "calls": [
+    {
+      "arguments": {
+        "affected_services": [
+          "target-payments"
+        ],
+        "severity": "sev1",
+        "summary": "target-payments service is down, healthz probe failed 3 times."
+      },
+      "name": "submit_triage"
+    }
+  ]
+}
