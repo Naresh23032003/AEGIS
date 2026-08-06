@@ -1,0 +1,14 @@
+.git
+.venv
+node_modules
+**/__pycache__
+**/*.pyc
+.next
+dist
+.mypy_cache
+.ruff_cache
+.pytest_cache
+docs
+plan
+e2e
+design-system

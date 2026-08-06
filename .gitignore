@@ -1,0 +1,30 @@
+.env
+.env.local
+.env.*.local
+node_modules/
+.next/
+__pycache__/
+*.pyc
+.venv/
+dist/
+.DS_Store
+/tmp/
+
+# generated contracts (regenerate with make contracts)
+packages/contracts/generated/
+apps/core/aegis/contracts/generated/
+
+# python
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+
+# node
+*.tsbuildinfo
+.eslintcache
+
+# local overrides
+docker-compose.override.yml
+.bin/

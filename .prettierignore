@@ -1,0 +1,12 @@
+node_modules
+.next
+dist
+build
+**/generated
+.venv
+*.min.js
+package-lock.json
+
+# pre-existing spec, not this repo's formatting convention
+PLAN.md
+plan/
