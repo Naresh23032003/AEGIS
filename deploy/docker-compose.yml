@@ -1,0 +1,222 @@
+name: aegis
+
+networks:
+  default:
+    name: aegis-net
+
+volumes:
+  shop-db-data:
+  aegis-db-data:
+
+services:
+  # --- infra: real images, healthchecked ---
+
+  shop-db:
+    image: postgres:16.14
+    environment:
+      POSTGRES_USER: aegis
+      POSTGRES_PASSWORD: aegis
+      POSTGRES_DB: shop
+    volumes:
+      - shop-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aegis -d shop"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  aegis-db:
+    image: postgres:16.14
+    command: ["postgres", "-p", "5433"]
+    environment:
+      POSTGRES_USER: aegis
+      POSTGRES_PASSWORD: aegis
+      POSTGRES_DB: aegis
+    volumes:
+      - aegis-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aegis -d aegis -p 5433"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7.4.10
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  opa:
+    image: openpolicyagent/opa:1.19.0-debug
+    command: ["run", "--server", "--addr=0.0.0.0:8181", "/policies"]
+    volumes:
+      - ../packages/policies:/policies:ro
+    healthcheck:
+      # the opa image has no curl/wget; netstat (busybox) confirms the server is listening
+      test: ["CMD-SHELL", "netstat -tln | grep -q :8181"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.10.0
+    healthcheck:
+      test: ["CMD", "/toxiproxy-cli", "list"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  lgtm:
+    image: grafana/otel-lgtm:0.28.0
+    ports:
+      - "3001:3000" # Grafana on host 3001
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+
+  # --- target system: stub FastAPI services until phase 1 ---
+
+  target-gateway:
+    build:
+      context: ../apps/target/gateway
+    ports:
+      - "9000:9000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request as u; u.urlopen('http://localhost:9000/healthz', timeout=2)",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  target-orders:
+    build:
+      context: ../apps/target/orders
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request as u; u.urlopen('http://localhost:9001/healthz', timeout=2)",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    depends_on:
+      shop-db:
+        condition: service_healthy
+      toxiproxy:
+        condition: service_healthy
+
+  target-payments:
+    build:
+      context: ../apps/target/payments
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request as u; u.urlopen('http://localhost:9002/healthz', timeout=2)",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  loadgen:
+    build:
+      context: ../apps/loadgen
+    depends_on:
+      target-gateway:
+        condition: service_healthy
+
+  # --- core: api / worker / executor share one image, phase 0 stubs ---
+
+  core-api:
+    build:
+      context: ..
+      dockerfile: apps/core/Dockerfile
+    ports:
+      - "8080:8080"
+    env_file:
+      - ../.env
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request as u; u.urlopen('http://localhost:8080/healthz', timeout=2)",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    depends_on:
+      aegis-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      opa:
+        condition: service_healthy
+
+  core-worker:
+    build:
+      context: ..
+      dockerfile: apps/core/Dockerfile
+    command: ["python", "-m", "aegis.worker"]
+    env_file:
+      - ../.env
+    depends_on:
+      aegis-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  core-executor:
+    build:
+      context: ..
+      dockerfile: apps/core/Dockerfile
+    command: ["python", "-m", "aegis.executor"]
+    env_file:
+      - ../.env
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      aegis-db:
+        condition: service_healthy
+
+  # --- console ---
+
+  console:
+    build:
+      context: ..
+      dockerfile: apps/console/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8080
+      NEXT_PUBLIC_WS_URL: ws://localhost:8080/ws/events
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3000/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    depends_on:
+      core-api:
+        condition: service_healthy
