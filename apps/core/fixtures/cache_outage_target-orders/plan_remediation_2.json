@@ -1,0 +1,20 @@
+{
+  "calls": [
+    {
+      "arguments": {
+        "actions": [
+          {
+            "catalog_key": "restart_dependency",
+            "confidence": 0.88,
+            "params": {
+              "service": "redis"
+            },
+            "reasoning": "The hypothesis is a paused redis container; restart_dependency restarts it directly, unlike restart_service which only takes a target service name.",
+            "rollback_key": null
+          }
+        ]
+      },
+      "name": "submit_plan"
+    }
+  ]
+}

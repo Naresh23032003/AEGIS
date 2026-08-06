@@ -2,9 +2,14 @@
   "calls": [
     {
       "arguments": {
-        "service": "target-gateway"
+        "confidence": 0.8,
+        "evidence_refs": [
+          "query_metrics(target-gateway)",
+          "query_logs(target-gateway)"
+        ],
+        "hypothesis": "The root cause of the incident is a service process stopped or crash-looping in the target-gateway service, resulting in high latency and error rates."
       },
-      "name": "query_metrics"
+      "name": "submit_diagnosis"
     }
   ]
 }

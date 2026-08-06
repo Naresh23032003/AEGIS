@@ -2,9 +2,11 @@
   "calls": [
     {
       "arguments": {
-        "service": "target-gateway"
+        "confidence": 0.5,
+        "evidence_refs": [],
+        "hypothesis": "The root cause of the incident is a bad feature flag causing elevated error rates on target-gateway."
       },
-      "name": "query_metrics"
+      "name": "submit_diagnosis"
     }
   ]
 }

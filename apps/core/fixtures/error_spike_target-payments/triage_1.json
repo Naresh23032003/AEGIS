@@ -3,10 +3,10 @@
     {
       "arguments": {
         "affected_services": [
-          "target-gateway"
+          "target-payments"
         ],
         "severity": "sev2",
-        "summary": "Error rate on target-gateway is 67.91%."
+        "summary": "error rate on target-payments is 44.65% exceeding the threshold of 10%."
       },
       "name": "submit_triage"
     }

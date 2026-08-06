@@ -5,11 +5,11 @@
         "actions": [
           {
             "catalog_key": "restart_service",
-            "confidence": 0.8,
+            "confidence": 0.93,
             "params": {
-              "service": "target-gateway"
+              "service": "target-payments"
             },
-            "reasoning": "The hypothesis suggests a service process stopped or crash-looping in the target-gateway service, so restarting the service should directly address the issue.",
+            "reasoning": "The hypothesis is an OOM-killed container; restarting it directly restores the process and its health endpoint.",
             "rollback_key": null
           }
         ]

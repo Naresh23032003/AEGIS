@@ -1,8 +1,20 @@
 {
   "calls": [
     {
-      "arguments": {},
-      "name": "get_catalog"
+      "arguments": {
+        "actions": [
+          {
+            "catalog_key": "remove_toxic",
+            "confidence": 0.8,
+            "params": {
+              "toxic_name": "orders_shopdb_latency"
+            },
+            "reasoning": "The hypothesis indicates added latency between orders and its database. Removing the toxic 'orders_shopdb_latency' directly addresses this cause.",
+            "rollback_key": null
+          }
+        ]
+      },
+      "name": "submit_plan"
     }
   ]
 }

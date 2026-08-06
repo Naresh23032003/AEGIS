@@ -1,0 +1,15 @@
+{
+  "calls": [
+    {
+      "arguments": {
+        "confidence": 0.88,
+        "evidence_refs": [
+          "query_metrics(target-payments)",
+          "query_logs(target-payments)"
+        ],
+        "hypothesis": "Roughly half of charge requests on target-payments are being rejected with a 500, consistent with a bad feature flag rather than a crash or resource exhaustion; the container is healthy and error responses are returned promptly, not timing out."
+      },
+      "name": "submit_diagnosis"
+    }
+  ]
+}

@@ -2,9 +2,9 @@
   "calls": [
     {
       "arguments": {
-        "service": "target-gateway"
+        "service": "redis"
       },
-      "name": "query_logs"
+      "name": "get_container_stats"
     }
   ]
 }

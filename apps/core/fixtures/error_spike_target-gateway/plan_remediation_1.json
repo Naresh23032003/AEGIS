@@ -4,12 +4,12 @@
       "arguments": {
         "actions": [
           {
-            "catalog_key": "restart_service",
+            "catalog_key": "remove_bad_feature_flag",
             "confidence": 0.8,
             "params": {
               "service": "target-gateway"
             },
-            "reasoning": "The hypothesis suggests a service process stopped or crash-looping in the target-gateway service, so restarting the service should directly address the issue.",
+            "reasoning": "Elevated error rate on target-gateway due to bad feature flag",
             "rollback_key": null
           }
         ]

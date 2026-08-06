@@ -9,7 +9,7 @@
     {
       "arguments": {
         "passed": true,
-        "summary": "p95 latency on target-orders is 6251.57ms, exceeding the threshold of 1000ms."
+        "summary": "p95 latency on target-orders is back under the 1000ms threshold."
       },
       "name": "submit_verification"
     }

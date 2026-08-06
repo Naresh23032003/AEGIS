@@ -4,7 +4,7 @@
       "arguments": {
         "service": "target-gateway"
       },
-      "name": "query_traces"
+      "name": "query_metrics"
     }
   ]
 }
