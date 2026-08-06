@@ -14,6 +14,10 @@ dependencies = [
   "httpx==0.28.1",
   "docker==7.2.0",
   "slowapi==0.1.10",
+  "langgraph==0.6.11",
+  "langgraph-checkpoint-postgres==2.0.25",
+  "psycopg[binary,pool]==3.2.13",
+  "openai==1.109.1",
 ]
 
 [build-system]
