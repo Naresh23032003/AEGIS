@@ -1,0 +1,71 @@
+<svg width="1200" height="675" viewBox="0 0 1200 675" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8B98A5" />
+    </marker>
+  </defs>
+
+  <rect width="1200" height="675" fill="#050607" />
+
+  <text x="60" y="72" fill="#E6EDF3" font-size="34" font-weight="600">AEGIS</text>
+  <text x="60" y="102" fill="#8B98A5" font-size="17">self-healing incident operations, with proof</text>
+
+  <!-- flow boxes -->
+  <g font-size="15">
+    <!-- target -->
+    <rect x="60" y="180" width="190" height="90" rx="6" fill="#0B0E11" stroke="#1E242C" />
+    <text x="155" y="218" fill="#E6EDF3" text-anchor="middle" font-size="16">target system</text>
+    <text x="155" y="240" fill="#8B98A5" text-anchor="middle" font-size="12">gateway / orders / payments</text>
+    <text x="155" y="257" fill="#F43F5E" text-anchor="middle" font-size="12">fault injected</text>
+
+    <!-- detect+diagnose -->
+    <rect x="320" y="180" width="220" height="90" rx="6" fill="#0B0E11" stroke="#22D3EE" />
+    <text x="430" y="212" fill="#E6EDF3" text-anchor="middle" font-size="16">detect + diagnose</text>
+    <text x="430" y="233" fill="#8B98A5" text-anchor="middle" font-size="12">rules engine, then</text>
+    <text x="430" y="250" fill="#8B98A5" text-anchor="middle" font-size="12">LangGraph agent loop</text>
+
+    <!-- policy -->
+    <rect x="610" y="180" width="180" height="90" rx="6" fill="#0B0E11" stroke="#F59E0B" />
+    <text x="700" y="212" fill="#E6EDF3" text-anchor="middle" font-size="16">policy gate</text>
+    <text x="700" y="233" fill="#8B98A5" text-anchor="middle" font-size="12">OPA, tier + confidence</text>
+    <text x="700" y="250" fill="#F59E0B" text-anchor="middle" font-size="12">green / yellow / red</text>
+
+    <!-- executor -->
+    <rect x="860" y="180" width="190" height="90" rx="6" fill="#0B0E11" stroke="#34D399" />
+    <text x="955" y="212" fill="#E6EDF3" text-anchor="middle" font-size="16">executor</text>
+    <text x="955" y="233" fill="#8B98A5" text-anchor="middle" font-size="12">closed action catalog</text>
+    <text x="955" y="250" fill="#34D399" text-anchor="middle" font-size="12">fixes it, for real</text>
+
+    <!-- arrows -->
+    <line x1="250" y1="225" x2="315" y2="225" stroke="#8B98A5" stroke-width="1.5" marker-end="url(#arrow)" />
+    <line x1="540" y1="225" x2="605" y2="225" stroke="#8B98A5" stroke-width="1.5" marker-end="url(#arrow)" />
+    <line x1="790" y1="225" x2="855" y2="225" stroke="#8B98A5" stroke-width="1.5" marker-end="url(#arrow)" />
+  </g>
+
+  <!-- event log spine -->
+  <rect x="60" y="340" width="990" height="70" rx="6" fill="#0B0E11" stroke="#1E242C" />
+  <text x="90" y="368" fill="#E6EDF3" font-size="15">hash-chained event log</text>
+  <text x="90" y="390" fill="#8B98A5" font-size="12">every step, chained and signed: sha256(prev_hash || canonical_json(event))</text>
+  <g stroke="#1E242C" stroke-width="1.5">
+    <line x1="155" y1="270" x2="155" y2="340" />
+    <line x1="430" y1="270" x2="430" y2="340" />
+    <line x1="700" y1="270" x2="700" y2="340" />
+    <line x1="955" y1="270" x2="955" y2="340" />
+  </g>
+
+  <!-- console + evidence pack -->
+  <rect x="60" y="460" width="470" height="110" rx="6" fill="#0B0E11" stroke="#1E242C" />
+  <text x="90" y="495" fill="#E6EDF3" font-size="16">console</text>
+  <text x="90" y="518" fill="#8B98A5" font-size="12">live topology, agent stream, veto / approval</text>
+  <text x="90" y="538" fill="#8B98A5" font-size="12">flight recorder replay, chain-verified badge</text>
+
+  <rect x="580" y="460" width="470" height="110" rx="6" fill="#0B0E11" stroke="#1E242C" />
+  <text x="610" y="495" fill="#E6EDF3" font-size="16">evidence pack</text>
+  <text x="610" y="518" fill="#8B98A5" font-size="12">PDF + events.jsonl, EU AI Act section</text>
+  <text x="610" y="538" fill="#8B98A5" font-size="12">mappings: Art. 12, 14, 73</text>
+
+  <line x1="295" y1="410" x2="295" y2="455" stroke="#1E242C" stroke-width="1.5" />
+  <line x1="815" y1="410" x2="815" y2="455" stroke="#1E242C" stroke-width="1.5" />
+
+  <text x="60" y="630" fill="#8B98A5" font-size="13">github.com/Naresh23032003/AEGIS</text>
+</svg>
