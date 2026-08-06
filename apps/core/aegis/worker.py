@@ -156,12 +156,25 @@ class Runner:
         await resume_parked_run(self.graph, incident_id=incident_id)
 
     async def resume_orphaned_runs(self) -> None:
+        """Found live investigating the phase 3/4 CI failure: this used to
+        spawn self.resume(incident_id) instead of resume_incident(...)
+        directly. spawn() adds incident_id to in_flight and creates the
+        task *before* the task body runs; when that body was self.resume,
+        its own in_flight check then always saw the entry spawn() had just
+        added for it and returned immediately without ever calling
+        resume_incident. Every orphaned run silently no-op'd at startup,
+        permanently stuck in 'resolving' -- exactly the failure
+        e2e/test_checkpoint_resume.py exists to catch. spawn()'s own
+        top-level in_flight check (empty at this point in startup, before
+        anything else could have raced) is the real guard; going through
+        self.resume() here was redundant and, as it turned out,
+        self-defeating."""
         async with db.connection() as conn:
             rows = await conn.fetch(_SELECT_RESOLVING)
         for row in rows:
             incident_id = row["id"]
             logger.warning("resuming orphaned run for incident %s", incident_id)
-            self.spawn(incident_id, self.resume(incident_id))
+            self.spawn(incident_id, resume_incident(self.graph, incident_id=incident_id))
 
     async def run_dispatch_loop(self, stop: asyncio.Event) -> None:
         while not stop.is_set():
