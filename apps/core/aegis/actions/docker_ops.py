@@ -47,6 +47,69 @@ def unpause_container(name: str) -> dict[str, Any]:
     return {"container": name, "action": "unpause"}
 
 
+def container_state(name: str) -> dict[str, Any]:
+    """Inspect-only state (status, OOM flag, exit code), no live stats call.
+    plan/phases/phase-2.md's open question (PHASE_2_REPORT.md): service_down
+    fires for both crash (docker stop) and memory_leak (OOM kill) on the
+    same container; OOMKilled is the one signal that tells them apart
+    without adding a second detection rule (see aegis.agents.state)."""
+    try:
+        container = _client().containers.get(name)
+    except NotFound:
+        return {"container": name, "status": "not_found", "oom_killed": False, "exit_code": None}
+    state = container.attrs.get("State", {})
+    return {
+        "container": name,
+        "status": container.status,
+        "oom_killed": bool(state.get("OOMKilled", False)),
+        "exit_code": state.get("ExitCode"),
+    }
+
+
+def clone_and_start(name: str, clone_name: str) -> dict[str, Any]:
+    """scale_service's "1 -> 2": start a second container from the same
+    image/env/network as `name`, published on no host ports (the original
+    already owns those). Docker Compose's own scaling is a CLI concept
+    (`docker compose up --scale`), not a docker-SDK primitive, and the
+    executor never shells out (plan/04-security.md); cloning the running
+    container's own config through the SDK gets the same effect without a
+    subprocess. Idempotent: a pre-existing clone is left running as-is."""
+    client = _client()
+    try:
+        existing = client.containers.get(clone_name)
+    except NotFound:
+        pass
+    else:
+        if existing.status != "running":
+            existing.start()
+        return {"container": clone_name, "action": "scale_up", "already_existed": True}
+
+    source = client.containers.get(name)
+    networks = list(source.attrs["NetworkSettings"]["Networks"])
+    image_id = source.attrs["Image"]
+    client.containers.run(
+        image_id,
+        name=clone_name,
+        environment=source.attrs["Config"].get("Env", []),
+        network=networks[0] if networks else None,
+        detach=True,
+    )
+    return {"container": clone_name, "action": "scale_up", "already_existed": False}
+
+
+def stop_and_remove(clone_name: str) -> dict[str, Any]:
+    """scale_service's rollback ("scale back to 1"): stop and remove the
+    clone created by clone_and_start. A clone that never existed is a
+    no-op, not an error (rollback of an action that never ran)."""
+    try:
+        container = _client().containers.get(clone_name)
+    except NotFound:
+        return {"container": clone_name, "action": "scale_down", "existed": False}
+    container.stop(timeout=5)
+    container.remove()
+    return {"container": clone_name, "action": "scale_down", "existed": True}
+
+
 def container_stats(name: str) -> dict[str, Any]:
     try:
         container = _client().containers.get(name)
