@@ -1,5 +1,5 @@
 .PHONY: up down contracts contracts-python contracts-ts test test-python test-ts opa-test \
-        e2e e2e-live record-fixtures lint lint-python lint-ts venv env
+        e2e e2e-live record-fixtures lint lint-python lint-ts venv env node-modules
 
 COMPOSE := docker compose -f deploy/docker-compose.yml
 PY := .venv/bin/python
@@ -19,12 +19,19 @@ venv:
 env:
 	[ -f .env ] || cp .env.example .env
 
+# contracts-ts's `npm run gen` needs the workspace's own node_modules
+# (json-schema-to-typescript); a clean clone has none. Same cold-clone
+# timing that found the missing .venv (see venv's up dependency below)
+# found this too.
+node-modules:
+	@[ -d node_modules ] || npm ci
+
 # `contracts` (host-side codegen, see contracts-python below) needs
 # .venv/bin/datamodel-codegen; a clean clone has no .venv yet, so `up` must
 # provision it first or the phase 6 stranger test (clone -> make up ->
 # healed incident, Docker + Python 3.12 only) fails before Docker even
 # starts. Found by timing a cold clone for the phase 6 report.
-up: env venv contracts
+up: env venv node-modules contracts
 	$(COMPOSE) up -d --build
 
 down:
