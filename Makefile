@@ -40,6 +40,7 @@ test-python:
 test-ts:
 	npx -w @aegis/console tsc --noEmit
 	npx -w @aegis/contracts tsc --noEmit
+	npm run test -w @aegis/console
 
 opa-test:
 	$(OPA) test packages/policies -v
