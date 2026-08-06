@@ -138,3 +138,18 @@ async def stats(
         result = {"container": container, "error": str(exc)}
     result["checked_at"] = datetime.now(UTC).isoformat()
     return result
+
+
+@app.get("/state/{service}")
+async def state(
+    service: str, x_aegis_executor_secret: str | None = Header(default=None)
+) -> dict[str, Any]:
+    """Inspect-only container state (status/OOMKilled/exit_code), unlike
+    /stats which calls the live stats API and can fail on a stopped
+    container. Used to tell crash and memory_leak apart (both fire the
+    same service_down rule on the same container; see aegis.agents.state)."""
+    _check_secret(x_aegis_executor_secret)
+    container = STATS_CONTAINER_NAMES.get(service)
+    if container is None:
+        raise HTTPException(status_code=404, detail=f"unknown service {service}")
+    return docker_ops.container_state(container)

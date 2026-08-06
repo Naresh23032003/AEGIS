@@ -2,11 +2,16 @@
 "Each scenario has an e2e test asserting: incident detected within 30s of
 injection [see DETECT_TIMEOUT_SECONDS note in conftest.py], resolved with
 expected autonomy level, MTTR under 90s (fixtures) or 150s (live LLM),
-hash chain valid, expected catalog_key executed."
+hash chain valid, expected catalog_key executed. These five tests are the
+project's definition of working."
 
-Phase 2 covers exactly the two scenarios that heal fully autonomously this
-phase (plan/06-milestones.md, Phase 2): latency and crash. The remaining
-three arrive in phase 3.
+Phase 2 covered latency and crash, the two that heal fully autonomously
+with no policy engine at all. Phase 3 adds the remaining three, each
+exercising a different part of the tier machinery: error_spike and
+cache_outage are yellow tier (their veto window opens and times out
+unvetoed, since nothing here vetoes them), and memory_leak is
+service_down's other cause (aegis.agents.state's crash/memory_leak
+disambiguation).
 """
 
 from __future__ import annotations
@@ -39,7 +44,7 @@ def _assert_healed(
     executed_keys = [e["payload"]["catalog_key"] for e in events if e["type"] == "action.executed"]
     assert expected_catalog_key in executed_keys, executed_keys
 
-    chain = verify_chain(incident["id"])
+    chain = verify_chain(client, incident["id"])
     assert chain["valid"], chain
 
 
@@ -67,3 +72,42 @@ def test_crash_heals(client: httpx.Client) -> None:
         )
     finally:
         client.delete("/api/chaos/crash")
+
+
+def test_error_spike_heals(client: httpx.Client) -> None:
+    client.post("/api/chaos/error_spike")
+    try:
+        _assert_healed(
+            client,
+            source_rule="error_rate",
+            service="target-payments",
+            expected_catalog_key="rollback_config",
+        )
+    finally:
+        client.delete("/api/chaos/error_spike")
+
+
+def test_memory_leak_heals(client: httpx.Client) -> None:
+    client.post("/api/chaos/memory_leak")
+    try:
+        _assert_healed(
+            client,
+            source_rule="service_down",
+            service="target-payments",
+            expected_catalog_key="restart_service",
+        )
+    finally:
+        client.delete("/api/chaos/memory_leak")
+
+
+def test_cache_outage_heals(client: httpx.Client) -> None:
+    client.post("/api/chaos/cache_outage")
+    try:
+        _assert_healed(
+            client,
+            source_rule="latency_p95",
+            service="target-orders",
+            expected_catalog_key="restart_dependency",
+        )
+    finally:
+        client.delete("/api/chaos/cache_outage")

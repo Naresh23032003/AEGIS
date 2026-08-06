@@ -1,0 +1,20 @@
+{
+  "calls": [
+    {
+      "arguments": {
+        "actions": [
+          {
+            "catalog_key": "remove_bad_feature_flag",
+            "confidence": 0.8,
+            "params": {
+              "service": "target-gateway"
+            },
+            "reasoning": "Elevated error rate on target-gateway due to bad feature flag",
+            "rollback_key": null
+          }
+        ]
+      },
+      "name": "submit_plan"
+    }
+  ]
+}

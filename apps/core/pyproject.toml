@@ -18,6 +18,7 @@ dependencies = [
   "langgraph-checkpoint-postgres==2.0.25",
   "psycopg[binary,pool]==3.2.13",
   "openai==1.109.1",
+  "PyNaCl==1.6.1",
 ]
 
 [build-system]

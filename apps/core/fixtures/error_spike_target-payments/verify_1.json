@@ -1,0 +1,17 @@
+{
+  "calls": [
+    {
+      "arguments": {
+        "services": "target-payments"
+      },
+      "name": "run_verification_probes"
+    },
+    {
+      "arguments": {
+        "passed": true,
+        "summary": "error rate on target-payments is back under the 10% threshold."
+      },
+      "name": "submit_verification"
+    }
+  ]
+}

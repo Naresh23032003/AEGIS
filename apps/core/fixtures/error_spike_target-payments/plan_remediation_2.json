@@ -1,0 +1,20 @@
+{
+  "calls": [
+    {
+      "arguments": {
+        "actions": [
+          {
+            "catalog_key": "rollback_config",
+            "confidence": 0.87,
+            "params": {
+              "service": "target-payments"
+            },
+            "reasoning": "The hypothesis points to a bad feature flag on target-payments; rolling back its config clears the flag and restarts the service.",
+            "rollback_key": "rollback_config"
+          }
+        ]
+      },
+      "name": "submit_plan"
+    }
+  ]
+}

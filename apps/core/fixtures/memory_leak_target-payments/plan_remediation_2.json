@@ -1,0 +1,20 @@
+{
+  "calls": [
+    {
+      "arguments": {
+        "actions": [
+          {
+            "catalog_key": "restart_service",
+            "confidence": 0.93,
+            "params": {
+              "service": "target-payments"
+            },
+            "reasoning": "The hypothesis is an OOM-killed container; restarting it directly restores the process and its health endpoint.",
+            "rollback_key": null
+          }
+        ]
+      },
+      "name": "submit_plan"
+    }
+  ]
+}

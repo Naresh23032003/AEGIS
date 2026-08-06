@@ -23,6 +23,23 @@ REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379/0")
 # than FLUSHDB, which would also wipe aegis:events).
 CACHE_KEY_PATTERN = "order:*"
 
+# No component in this demo actually enqueues retries yet (out of phase 3
+# scope: it is a target-app feature, not a policy/security one); this key
+# is the real, currently-always-empty queue flush_queue purges. A genuine
+# DEL against the live stack, not a hardcoded stub, per plan/04-security.md's
+# "every mechanism here is real and testable" (deviation noted in the phase
+# report).
+RETRY_QUEUE_KEY = "aegis:orders:retry_queue"
+
+SERVICE_URLS = {
+    "target-gateway": os.environ.get("GATEWAY_URL", "http://target-gateway:9000"),
+    "target-orders": os.environ.get("ORDERS_URL", "http://target-orders:9001"),
+    "target-payments": os.environ.get("PAYMENTS_URL", "http://target-payments:9002"),
+}
+# Only target-payments carries fault toggles today (apps/target/payments/main.py);
+# rollback_config best-effort clears whichever of these a service exposes.
+FAULT_TOGGLE_PATHS = ("/internal/fault/error-spike", "/internal/fault/memory-leak")
+
 
 async def _clear_cache() -> dict[str, Any]:
     client = redis.from_url(REDIS_URL, decode_responses=True)
@@ -43,6 +60,44 @@ async def _remove_toxic(toxic_name: str) -> dict[str, Any]:
     return {"toxic": toxic_name, "removed": resp.status_code != 404}
 
 
+def _scale_clone_name(service: str) -> str:
+    return f"{service}-scale-2"
+
+
+async def _scale_service(service: str, replicas: int) -> dict[str, Any]:
+    clone = _scale_clone_name(service)
+    if replicas >= 2:
+        result = docker_ops.clone_and_start(service, clone)
+    else:
+        result = docker_ops.stop_and_remove(clone)
+    return {"service": service, "replicas": replicas, **result}
+
+
+async def _rollback_config(service: str) -> dict[str, Any]:
+    base_url = SERVICE_URLS.get(service)
+    cleared: list[str] = []
+    if base_url is not None:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            for path in FAULT_TOGGLE_PATHS:
+                try:
+                    resp = await client.post(f"{base_url}{path}", json={"enabled": False})
+                    resp.raise_for_status()
+                    cleared.append(path)
+                except httpx.HTTPError:
+                    continue  # this service doesn't expose that fault toggle
+    restart = docker_ops.restart_container(service)
+    return {"service": service, "cleared_faults": cleared, **restart}
+
+
+async def _flush_queue() -> dict[str, Any]:
+    client = redis.from_url(REDIS_URL, decode_responses=True)
+    try:
+        purged = await client.delete(RETRY_QUEUE_KEY)
+    finally:
+        await client.aclose()
+    return {"queue": RETRY_QUEUE_KEY, "purged": bool(purged)}
+
+
 async def run(catalog_key: str, params: dict[str, Any]) -> dict[str, Any]:
     if catalog_key == "restart_service":
         return docker_ops.restart_container(params["service"])
@@ -53,14 +108,11 @@ async def run(catalog_key: str, params: dict[str, Any]) -> dict[str, Any]:
     if catalog_key == "restart_dependency":
         return docker_ops.restart_container(params["service"])
     if catalog_key == "scale_service":
-        # compose scale is out of scope for phase 2 (green tier only needs
-        # to work this phase, plan/06 phase 2 build order step 3); mapping
-        # exists so the catalog is complete but is untested until phase 3.
-        return {"service": params["service"], "replicas": params["replicas"], "status": "stub"}
+        return await _scale_service(params["service"], params["replicas"])
     if catalog_key == "rollback_config":
-        return {"service": params["service"], "status": "stub"}
+        return await _rollback_config(params["service"])
     if catalog_key == "flush_queue":
-        return {"status": "stub"}
+        return await _flush_queue()
     if catalog_key == "restart_database":
         return docker_ops.restart_container("shop-db")
     raise ValueError(f"no executor mapping for {catalog_key}")

@@ -1,0 +1,17 @@
+{
+  "calls": [
+    {
+      "arguments": {
+        "services": "target-payments"
+      },
+      "name": "run_verification_probes"
+    },
+    {
+      "arguments": {
+        "passed": true,
+        "summary": "target-payments service is up, healthz probe passed."
+      },
+      "name": "submit_verification"
+    }
+  ]
+}

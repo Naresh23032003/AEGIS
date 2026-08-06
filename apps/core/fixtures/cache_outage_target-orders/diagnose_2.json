@@ -1,0 +1,10 @@
+{
+  "calls": [
+    {
+      "arguments": {
+        "service": "redis"
+      },
+      "name": "get_container_stats"
+    }
+  ]
+}

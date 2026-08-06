@@ -1,0 +1,14 @@
+{
+  "calls": [
+    {
+      "arguments": {
+        "affected_services": [
+          "target-payments"
+        ],
+        "severity": "sev2",
+        "summary": "error rate on target-payments is 44.65% exceeding the threshold of 10%."
+      },
+      "name": "submit_triage"
+    }
+  ]
+}

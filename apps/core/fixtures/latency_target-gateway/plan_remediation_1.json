@@ -1,8 +1,20 @@
 {
   "calls": [
     {
-      "arguments": {},
-      "name": "get_catalog"
+      "arguments": {
+        "actions": [
+          {
+            "catalog_key": "restart_service",
+            "confidence": 0.8,
+            "params": {
+              "service": "target-gateway"
+            },
+            "reasoning": "The hypothesis suggests a service process stopped or crash-looping in the target-gateway service, so restarting the service should directly address the issue.",
+            "rollback_key": null
+          }
+        ]
+      },
+      "name": "submit_plan"
     }
   ]
 }

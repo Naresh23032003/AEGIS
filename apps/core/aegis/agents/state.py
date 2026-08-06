@@ -41,22 +41,63 @@ class AgentState(TypedDict, total=False):
     loop_count: int
     confidence: float
     scenario: str | None
+    escalate_reason: str | None
 
 
 RULE_TO_SCENARIO = {
     # Best-effort mapping from the firing detection rule to a chaos scenario
-    # key, used only for MOCK_LLM fixture selection and for the phase 2
-    # e2e suite. memory_leak also fires service_down (ambiguous with crash)
-    # and is not one of phase 2's two working scenarios; disambiguating
-    # that overlap is left to phase 3, noted in the phase report.
+    # key, used only for MOCK_LLM fixture selection and for the e2e suite.
+    # Two of these rule/service pairs are ambiguous on their own:
+    #   - service_down fires for both crash and memory_leak on
+    #     target-payments (PHASE_2_REPORT.md, Open questions).
+    #   - latency_p95 fires for both latency (toxiproxy DB latency) and
+    #     cache_outage (a paused redis makes every cache read/write hang)
+    #     on target-orders.
+    # resolve_scenario_hint below breaks both ties with a live container
+    # check before this table is consulted; the entries here are only the
+    # fallback once that check has ruled the ambiguous alternative out (or
+    # the executor is unreachable).
     "service_down": "crash",
     "latency_p95": "latency",
     "error_rate": "error_spike",
 }
 
+_SERVICE_DOWN_AMBIGUOUS_SERVICE = "target-payments"
+_LATENCY_AMBIGUOUS_SERVICE = "target-orders"
 
-def fixture_scenario_key(*, source_rule: str, affected_services: list[str]) -> str | None:
-    base = RULE_TO_SCENARIO.get(source_rule)
+
+async def resolve_scenario_hint(*, source_rule: str, affected_services: list[str]) -> str | None:
+    """Async because disambiguating needs a live container_state call;
+    kept separate from the sync fixture_scenario_key below so unit tests
+    (aegis.agents.state) can exercise the pure (rule, service) -> key
+    mapping without a running executor. Returns None (defer to
+    RULE_TO_SCENARIO) whenever the rule/service pair isn't one of the two
+    ambiguous ones above, or the disambiguating check itself fails."""
+    # Import at call time: aegis.agents.executor_client is worker-side
+    # only, and this keeps aegis.agents.state importable (e.g. by unit
+    # tests) without pulling in an httpx client at module load.
+    from aegis.agents import executor_client
+
+    first_service = affected_services[0] if affected_services else None
+    if source_rule == "service_down" and first_service == _SERVICE_DOWN_AMBIGUOUS_SERVICE:
+        try:
+            payments_state = await executor_client.container_state(_SERVICE_DOWN_AMBIGUOUS_SERVICE)
+        except executor_client.ExecutorError:
+            return None
+        return "memory_leak" if payments_state.get("oom_killed") else None
+    if source_rule == "latency_p95" and first_service == _LATENCY_AMBIGUOUS_SERVICE:
+        try:
+            redis_state = await executor_client.container_state("redis")
+        except executor_client.ExecutorError:
+            return None
+        return "cache_outage" if redis_state.get("status") == "paused" else None
+    return None
+
+
+def fixture_scenario_key(
+    *, source_rule: str, affected_services: list[str], scenario_hint: str | None = None
+) -> str | None:
+    base = scenario_hint or RULE_TO_SCENARIO.get(source_rule)
     if base is None:
         return None
     if not affected_services:
@@ -64,7 +105,12 @@ def fixture_scenario_key(*, source_rule: str, affected_services: list[str]) -> s
     return f"{base}_{affected_services[0]}"
 
 
-def initial_state(*, incident: dict[str, Any], detection_snapshot: dict[str, Any]) -> AgentState:
+def initial_state(
+    *,
+    incident: dict[str, Any],
+    detection_snapshot: dict[str, Any],
+    scenario_hint: str | None = None,
+) -> AgentState:
     source_rule = incident["source_rule"]
     return AgentState(
         incident=incident,
@@ -77,6 +123,9 @@ def initial_state(*, incident: dict[str, Any], detection_snapshot: dict[str, Any
         loop_count=0,
         confidence=0.0,
         scenario=fixture_scenario_key(
-            source_rule=source_rule, affected_services=incident.get("affected_services") or []
+            source_rule=source_rule,
+            affected_services=incident.get("affected_services") or [],
+            scenario_hint=scenario_hint,
         ),
+        escalate_reason=None,
     )

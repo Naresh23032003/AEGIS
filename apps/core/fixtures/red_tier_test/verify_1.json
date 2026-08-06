@@ -1,0 +1,11 @@
+{
+  "calls": [
+    {
+      "name": "submit_verification",
+      "arguments": {
+        "passed": true,
+        "summary": "no affected services on this synthetic incident; probes vacuously pass"
+      }
+    }
+  ]
+}

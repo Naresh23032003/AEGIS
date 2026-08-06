@@ -2,9 +2,9 @@
   "calls": [
     {
       "arguments": {
-        "service": "target-gateway"
+        "service": "target-payments"
       },
-      "name": "get_container_stats"
+      "name": "query_metrics"
     }
   ]
 }

@@ -13,6 +13,10 @@ services:
 
   shop-db:
     image: postgres:16.14
+    # aegis.actions.execute's restart_database maps to this literal
+    # container name (found live in phase 3: without it, compose names the
+    # container aegis-shop-db-1 and every restart_database action 404s).
+    container_name: shop-db
     environment:
       POSTGRES_USER: aegis
       POSTGRES_PASSWORD: aegis

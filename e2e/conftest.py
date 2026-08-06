@@ -5,7 +5,6 @@ plan/06-milestones.md, "Each scenario has an e2e test..." per plan/03.
 
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 import time
@@ -92,28 +91,11 @@ def events_for(client: httpx.Client, incident_id: str) -> list[dict[str, Any]]:
     return resp.json()  # type: ignore[no-any-return]
 
 
-def verify_chain(incident_id: str) -> dict[str, Any]:
-    """No GET /verify-chain endpoint until phase 3 (PHASE_1_REPORT.md,
-    Deviations): recomputes the chain from the stored hash/prev_hash
-    columns, which aren't exposed over HTTP, by running scripts/verify_chain.py
-    inside core-api (the only place with both `aegis` importable and
-    network access to aegis-db, per plan/04-security.md)."""
-    proc = subprocess.run(  # noqa: S603 - fixed argv, no shell, internal test tooling
-        [  # noqa: S607 - "docker" is intentionally resolved via PATH
-            "docker",
-            "compose",
-            "-f",
-            "deploy/docker-compose.yml",
-            "exec",
-            "-T",
-            "core-api",
-            "python",
-            "scripts/verify_chain.py",
-            incident_id,
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-        timeout=30,
-    )
-    return json.loads(proc.stdout.strip().splitlines()[-1])  # type: ignore[no-any-return]
+def verify_chain(client: httpx.Client, incident_id: str) -> dict[str, Any]:
+    """GET /incidents/{id}/verify-chain landed in phase 3 (PHASE_1_REPORT.md
+    had this recomputing the chain out-of-band via a helper script run
+    inside core-api; that stopgap is retired now that the real endpoint
+    exists)."""
+    resp = client.get(f"/api/incidents/{incident_id}/verify-chain")
+    resp.raise_for_status()
+    return resp.json()  # type: ignore[no-any-return]

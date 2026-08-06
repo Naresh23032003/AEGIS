@@ -50,3 +50,12 @@ async def container_stats(service: str) -> dict[str, Any]:
         raise ExecutorError(f"executor stats {resp.status_code}: {resp.text}")
     result: dict[str, Any] = resp.json()
     return result
+
+
+async def container_state(service: str) -> dict[str, Any]:
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(f"{EXECUTOR_URL}/state/{service}", headers=headers())
+    if resp.status_code != 200:
+        raise ExecutorError(f"executor state {resp.status_code}: {resp.text}")
+    result: dict[str, Any] = resp.json()
+    return result

@@ -1,0 +1,15 @@
+{
+  "calls": [
+    {
+      "arguments": {
+        "confidence": 0.9,
+        "evidence_refs": [
+          "get_container_stats(target-payments)",
+          "query_logs(target-payments)"
+        ],
+        "hypothesis": "target-payments was OOM killed after unbounded memory growth (get_container_stats shows the container exited with OOMKilled set), not a manual stop; the process needs a fresh restart to recover."
+      },
+      "name": "submit_diagnosis"
+    }
+  ]
+}

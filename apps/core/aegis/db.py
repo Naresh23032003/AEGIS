@@ -87,6 +87,25 @@ CREATE TABLE IF NOT EXISTS aegis.agent_runs (
 CREATE INDEX IF NOT EXISTS agent_runs_incident_id_idx ON aegis.agent_runs (incident_id);
 CREATE INDEX IF NOT EXISTS agent_runs_status_heartbeat_idx
     ON aegis.agent_runs (status, last_heartbeat);
+
+-- Phase 3: signed approvals and vetoes (plan/02-contracts.md).
+CREATE TABLE IF NOT EXISTS aegis.approver_keys (
+    pubkey text PRIMARY KEY,
+    label text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS aegis.approvals (
+    id text PRIMARY KEY,
+    action_id text NOT NULL,
+    decision text NOT NULL,                                        -- approve|reject|veto
+    approver_pubkey text NOT NULL,
+    signed_payload text NOT NULL,
+    signature text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS approvals_action_id_idx ON aegis.approvals (action_id);
 """
 
 _pool: asyncpg.Pool | None = None

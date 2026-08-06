@@ -1,0 +1,17 @@
+{
+  "calls": [
+    {
+      "arguments": {
+        "services": "target-orders"
+      },
+      "name": "run_verification_probes"
+    },
+    {
+      "arguments": {
+        "passed": true,
+        "summary": "p95 latency on target-orders is back under the 1000ms threshold."
+      },
+      "name": "submit_verification"
+    }
+  ]
+}

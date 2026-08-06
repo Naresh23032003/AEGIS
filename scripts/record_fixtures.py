@@ -24,6 +24,26 @@ API = "http://localhost:8080"
 POLL_SECONDS = 3
 TIMEOUT_SECONDS = 240
 
+# cache_outage and error_spike are qualitatively worse than the other
+# three: a paused redis breaks every request through target-orders (and,
+# cascading, target-gateway's checkout calls); a 50%-error payments
+# breaks every checkout that reaches it the same way. Both continuously,
+# not as a single probe. Left injected for the whole TIMEOUT_SECONDS
+# window, detection reopens a fresh incident on the very next 5s poll
+# after each one resolves or escalates, forever, since the fault itself
+# never goes away; against a rate-limited free-tier key that produced 17
+# (cache_outage) and 39 (error_spike) concurrent incidents in testing and
+# never settled.
+#
+# Clearing right when the first incident opens stops the storm but also
+# starves diagnose of real evidence (found live for cache_outage: the
+# model, unable to see anything wrong anymore, guessed remove_toxic
+# instead of restart_dependency). GRACE_SECONDS gives the first incident's
+# diagnose node time to actually gather that evidence before the fault
+# goes away.
+CLEAR_AFTER_FIRST_INCIDENT = {"cache_outage", "error_spike"}
+CLEAR_GRACE_SECONDS = 10
+
 
 def run(cmd: list[str], **kwargs: object) -> None:
     print("+", " ".join(cmd))
@@ -94,6 +114,12 @@ def main() -> None:
         print(f"injecting {scenario}")
         injected_at = time.time()
         post(f"/api/chaos/{scenario}")
+        if scenario in CLEAR_AFTER_FIRST_INCIDENT:
+            wait_for_first_incident(scenario, injected_at)
+            print(f"first incident open, giving diagnose {CLEAR_GRACE_SECONDS}s under the fault")
+            time.sleep(CLEAR_GRACE_SECONDS)
+            print(f"clearing {scenario} to stop a re-detection storm")
+            delete(f"/api/chaos/{scenario}")
         incidents = wait_resolved(scenario, injected_at)
         for incident in incidents:
             print(
@@ -111,7 +137,34 @@ def main() -> None:
             delete(f"/api/chaos/{scenario}")
         except Exception as exc:  # noqa: BLE001 - best-effort cleanup, script still tears down
             print(f"cleanup: chaos clear failed (non-fatal): {exc}")
-        run([*COMPOSE, "up", "-d", "core-worker"])
+        _restore_worker()
+
+
+def wait_for_first_incident(scenario: str, injected_at: float, timeout: float = 90.0) -> None:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        incidents = get_json("/api/incidents?limit=20")
+        new = [i for i in incidents if _parse_ts(i["started_at"]) >= injected_at - 5]  # type: ignore[index]
+        if new:
+            return
+        time.sleep(POLL_SECONDS)
+    raise TimeoutError(f"no incident opened for {scenario} within {timeout}s")
+
+
+def _restore_worker() -> None:
+    # Mirrors e2e/conftest.py's _ensure_worker_running retry: right after
+    # docker stop/rm churn (aegis-fixture-recorder above), the daemon can
+    # still be finalizing the previous container's exit and briefly report
+    # a healthy dependency (redis) as unhealthy, failing this start.
+    for attempt in range(3):
+        try:
+            run([*COMPOSE, "up", "-d", "core-worker"])
+            return
+        except subprocess.CalledProcessError:
+            if attempt == 2:
+                raise
+            print("core-worker restore failed, retrying in 3s")
+            time.sleep(3)
 
 
 if __name__ == "__main__":
