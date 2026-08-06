@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { DetailPanel } from "./components/DetailPanel";
 import { IncidentFeed } from "./components/IncidentFeed";
 import { MetricsStrip } from "./components/MetricsStrip";
-import { Topology2D } from "./components/Topology2D";
+import { TopologyRenderer } from "./components/TopologyRenderer";
 import { useIncidentViews } from "./hooks/useIncidentViews";
 
 const TERMINAL_STATUSES = new Set(["resolved", "escalated"]);
@@ -59,7 +59,7 @@ export default function OpsConsole() {
         </aside>
 
         <main className="min-w-0 flex-1" aria-label="Topology">
-          <Topology2D />
+          <TopologyRenderer />
         </main>
 
         {selected && (
