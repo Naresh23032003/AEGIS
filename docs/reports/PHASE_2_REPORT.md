@@ -381,6 +381,15 @@ this phase included): clean. Two instances of the literal string
 (`executor.py`, `docker_ops.py`) and tripped the grep; reworded both to
 say the same thing without the literal string.
 
+One flaky run found by `scripts/gate.sh 2` itself, after the above was
+all green: `test_checkpoint_resume.py`'s `docker compose up -d
+core-worker` right after `kill -s KILL` occasionally lost a race against
+the daemon still finalizing the previous container's exit, failed the
+restart, and left every later test failing too (no worker running).
+Fixed with a retry on that specific call plus an autouse fixture that
+restarts `core-worker` if an earlier test's cleanup didn't leave it
+running; confirmed clean on a second full `scripts/gate.sh 2` run.
+
 ## Open questions
 
 - **`memory_leak` and `crash` both fire `service_down`.**
