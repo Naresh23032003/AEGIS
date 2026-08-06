@@ -7,6 +7,13 @@ dependencies = [
   "fastapi==0.141.1",
   "uvicorn[standard]==0.52.1",
   "pydantic==2.13.4",
+  "asyncpg==0.31.0",
+  "redis==8.1.0",
+  "python-ulid==4.0.1",
+  "PyYAML==6.0.3",
+  "httpx==0.28.1",
+  "docker==7.2.0",
+  "slowapi==0.1.10",
 ]
 
 [build-system]
