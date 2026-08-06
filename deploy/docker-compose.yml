@@ -42,6 +42,7 @@ services:
 
   redis:
     image: redis:7.4.10
+    container_name: redis
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -79,13 +80,16 @@ services:
       retries: 15
       start_period: 30s
 
-  # --- target system: stub FastAPI services until phase 1 ---
+  # --- target system: gateway/orders/payments, loadgen, phase 1 ---
 
   target-gateway:
     build:
       context: ../apps/target/gateway
+    container_name: target-gateway
     ports:
       - "9000:9000"
+    env_file:
+      - ../.env
     healthcheck:
       test:
         [
@@ -97,10 +101,18 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    depends_on:
+      target-orders:
+        condition: service_healthy
+      target-payments:
+        condition: service_healthy
 
   target-orders:
     build:
       context: ../apps/target/orders
+    container_name: target-orders
+    env_file:
+      - ../.env
     healthcheck:
       test:
         [
@@ -115,12 +127,24 @@ services:
     depends_on:
       shop-db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       toxiproxy:
         condition: service_healthy
 
   target-payments:
     build:
       context: ../apps/target/payments
+    container_name: target-payments
+    mem_limit: 200m
+    # No restart policy: an OOM kill (memory_leak) must stay down long
+    # enough for service_down to fire, same as a manual `docker stop`
+    # (crash). Auto-restarting here would race Docker's own recovery
+    # against detection and, worse, silently do the remediation agent's
+    # restart_service job before the agent ever runs (phase 2). Clearing
+    # the scenario (aegis/chaos.py, _clear_memory_leak) restarts it instead.
+    env_file:
+      - ../.env
     healthcheck:
       test:
         [
@@ -140,7 +164,9 @@ services:
       target-gateway:
         condition: service_healthy
 
-  # --- core: api / worker / executor share one image, phase 0 stubs ---
+  # --- core: api / worker / executor share one image ---
+  # core-executor is still a phase 0 heartbeat stub; the action catalog and
+  # Docker socket RPC arrive in phase 2 (plan/04-security.md, Executor sandbox).
 
   core-api:
     build:
@@ -150,6 +176,11 @@ services:
       - "8080:8080"
     env_file:
       - ../.env
+    # Docker socket needed for the crash/cache_outage chaos manipulations
+    # (plan/phases/phase-1.md, Gotchas). Moves to core-executor in phase 2;
+    # the mapping already lives in one module (aegis/chaos.py) for that move.
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     healthcheck:
       test:
         [
@@ -168,6 +199,10 @@ services:
         condition: service_healthy
       opa:
         condition: service_healthy
+      toxiproxy:
+        condition: service_healthy
+      target-payments:
+        condition: service_healthy
 
   core-worker:
     build:
@@ -180,6 +215,14 @@ services:
       aegis-db:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      lgtm:
+        condition: service_healthy
+      target-gateway:
+        condition: service_healthy
+      target-orders:
+        condition: service_healthy
+      target-payments:
         condition: service_healthy
 
   core-executor:
