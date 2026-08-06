@@ -10,3 +10,5 @@ PyYAML==6.0.3
 asyncpg-stubs==0.31.3
 types-docker==7.2.0.20260728
 types-PyYAML==6.0.12.20260724
+# phase 6: e2e assertion that the evidence pack's report.pdf actually opens.
+pypdf==6.1.3

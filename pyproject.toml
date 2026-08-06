@@ -28,3 +28,8 @@ files = ["apps/core/aegis"]
 [[tool.mypy.overrides]]
 module = "aegis.contracts.generated.*"
 ignore_errors = true
+
+# reportlab ships no type stubs (phase 6, evidence pack PDF generation).
+[[tool.mypy.overrides]]
+module = "reportlab.*"
+ignore_missing_imports = true

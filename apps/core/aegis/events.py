@@ -47,6 +47,33 @@ def build_envelope(
     return envelope
 
 
+def verify_row_chain(incident_id: str, rows: list[asyncpg.Record]) -> dict[str, Any]:
+    """Recompute the hash chain from already-fetched incident_events rows.
+
+    Shared by GET .../verify-chain (aegis.api) and the evidence pack (phase
+    6, plan/phases/phase-6.md), which both need the identical check and, in
+    the pack's case, already has the rows in hand from building the
+    timeline: no reason to run the query twice.
+    """
+    prev_hash = incident_id
+    for row in rows:
+        payload = row["payload"]
+        if isinstance(payload, str):
+            payload = json.loads(payload)
+        envelope = {
+            "id": row["event_id"],
+            "ts": format_ts(row["created_at"]),
+            "type": row["type"],
+            "incident_id": incident_id,
+            "actor": row["actor"],
+            "payload": payload,
+        }
+        if row["prev_hash"] != prev_hash or next_hash(prev_hash, envelope) != row["hash"]:
+            return {"valid": False, "break_at_seq": row["seq"]}
+        prev_hash = row["hash"]
+    return {"valid": True, "break_at_seq": None}
+
+
 async def emit(
     conn: asyncpg.Connection | asyncpg.pool.PoolConnectionProxy,
     *,
