@@ -165,8 +165,8 @@ services:
         condition: service_healthy
 
   # --- core: api / worker / executor share one image ---
-  # core-executor is still a phase 0 heartbeat stub; the action catalog and
-  # Docker socket RPC arrive in phase 2 (plan/04-security.md, Executor sandbox).
+  # core-executor is the only service with the Docker socket mounted,
+  # per plan/04-security.md, Executor sandbox (phase 2).
 
   core-api:
     build:
@@ -176,11 +176,6 @@ services:
       - "8080:8080"
     env_file:
       - ../.env
-    # Docker socket needed for the crash/cache_outage chaos manipulations
-    # (plan/phases/phase-1.md, Gotchas). Moves to core-executor in phase 2;
-    # the mapping already lives in one module (aegis/chaos.py) for that move.
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
     healthcheck:
       test:
         [
@@ -211,6 +206,15 @@ services:
     command: ["python", "-m", "aegis.worker"]
     env_file:
       - ../.env
+    # Read-only repo checkout for the diagnose node's list_recent_changes
+    # tool (git log against a target service's directory). core-worker
+    # never gets the Docker socket; that stays on core-executor alone.
+    # fixtures is read-write so `make record-fixtures` (RECORD_FIXTURES=1,
+    # a one-off replacement worker) persists what it records back to the
+    # host instead of into a container that gets thrown away.
+    volumes:
+      - ../:/repo:ro
+      - ../apps/core/fixtures:/app/fixtures
     depends_on:
       aegis-db:
         condition: service_healthy
@@ -224,6 +228,8 @@ services:
         condition: service_healthy
       target-payments:
         condition: service_healthy
+      core-executor:
+        condition: service_healthy
 
   core-executor:
     build:
@@ -234,6 +240,17 @@ services:
       - ../.env
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request as u; u.urlopen('http://localhost:8090/healthz', timeout=2)",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     depends_on:
       aegis-db:
         condition: service_healthy

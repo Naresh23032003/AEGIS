@@ -10,3 +10,8 @@ package-lock.json
 # pre-existing spec, not this repo's formatting convention
 PLAN.md
 plan/
+
+# recorded LLM fixtures (make record-fixtures): generated data, not
+# hand-written source. aegis.llm writes these with json.dumps(indent=2,
+# sort_keys=True); no need for a second formatting convention on top.
+apps/core/fixtures/
