@@ -14,6 +14,10 @@ Two operational facts about this demo system, useful for filling in params:
   it directly.
 - If a target service's process is stopped or crash-looping, `restart_service`
   with `params.service` set to that service's name is the direct fix.
+- If the shared Redis cache dependency itself is paused or unresponsive
+  (not a target service), `restart_dependency` with `params.service =
+"redis"` restarts it directly; `restart_service` only takes a target
+  service name and cannot fix this.
 
 When ready, call `submit_plan` exactly once with:
 
