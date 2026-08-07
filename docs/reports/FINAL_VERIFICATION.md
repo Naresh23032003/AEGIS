@@ -19,6 +19,7 @@ Contents:
 - [6. Evidence pack](#6-evidence-pack)
 - [Verdict](#verdict)
 - [Phase 7 addendum](#phase-7-addendum)
+- [Live verification](#live-verification)
 
 ## 0. Post-review fixes
 
@@ -1301,3 +1302,198 @@ identical to .env.example apart from the redacted secret
 - No separate `docs/reports/PHASE_7_REPORT.md` exists: the phase 7 brief
   names this addendum as the phase report. `scripts/gate.sh 7` would fail
   its report-exists check for that reason, and was not run.
+
+## Live verification
+
+Run on 2026-08-07 on branch `phase-7`, on a third Groq key with an
+untouched daily budget, `LLM_LARGE` left at the committed
+`llama-3.3-70b-versatile`. Budget confirmed before anything was spent on
+it, and the stack recreated so the containers picked the key up:
+
+```
+HTTP/2 200
+x-ratelimit-limit-requests: 1000
+x-ratelimit-remaining-requests: 999
+
+MOCK_LLM=0
+LLM_LARGE=llama-3.3-70b-versatile
+```
+
+### The suite
+
+```
+### live e2e start 2026-08-07T06:30:38Z LLM_LARGE=llama-3.3-70b-versatile
+MOCK_LLM=0 .venv/bin/python -m pytest e2e -q
+FAILED e2e/test_approvals.py::test_veto_during_the_window_escalates_instead_of_healing
+FAILED e2e/test_scenarios.py::test_latency_heals - AssertionError: ['restart_...
+FAILED e2e/test_scenarios.py::test_error_spike_heals - AssertionError: {'id':...
+FAILED e2e/test_scenarios.py::test_cache_outage_heals - TimeoutError: no inci...
+4 failed, 14 passed in 1142.72s (0:19:02)
+### live e2e end 2026-08-07T07:04:49Z
+```
+
+14 of 18, against 10 of 15 on the pre-fix run in section 3. Not the 18/18
+this pass was aiming at. The thing that changed is why: not one failure is
+a rate limit. Over the whole run the worker log holds zero of them, the
+single grep hit being a millisecond in a timestamp:
+
+```
+$ docker logs aegis-core-worker-1 | grep 429
+2026-08-07 06:48:05,429 worker HTTP Request: GET http://target-orders:9001/healthz "HTTP/1.1 200 OK"
+$ docker logs aegis-core-worker-1 | grep -c "Rate limit"
+0
+```
+
+### Defect 3's prediction: confirmed, with 3.4% to spare
+
+Section 3 predicted that fixing defect 3 was "very likely enough to make
+`make e2e-live` pass on a free-tier key". On the question it was actually
+about, the day's token budget, it holds. The suite ran start to finish
+without hitting the limit once:
+
+```
+agent runs: 84, tokens_in 91422, tokens_out 5153, total 96575, cost $0.0432
+  escalated   14 incidents    49324 tokens
+  resolved    16 incidents    49134 tokens
+```
+
+Against the pre-fix run: 157 agent runs and 135,069 tokens in 9m05s, which
+blew through the 100,000 daily limit before the suite was half done. This
+run did twice the wall clock on 96,575 tokens and 84 runs.
+
+Confirmed, then, and worth saying exactly how narrowly: **96,575 of
+100,000 is 3.4% of a free-tier day left over.** The prediction was that
+the storm was what put the suite over the line, and removing it does bring
+the suite back under, but there is no room in that budget for a second run
+or for the follow-up collection this pass also wanted. A repeat on the
+same key on the same day would 429.
+
+The incident volume behind those numbers, one row per (rule, service,
+status):
+
+```
+incidents opened during the 19m02s live run: 30
+   16 resolved, 14 escalated
+```
+
+The 14 escalations still cost half the budget (49,324 tokens), but they
+are a different animal from defect 3's: each is a distinct fault, escalated
+once on the model's own judgement, not one fault re-opening every five
+seconds. Sixteen incidents resolved end to end against real model calls,
+including six that healed autonomously in 34s or less.
+
+### The four failures, none of them quota
+
+**`test_latency_heals`**, the most interesting one. The live diagnose agent
+blamed redis rather than the injected Toxiproxy latency, and
+plan_remediation proposed `restart_dependency` on redis (yellow tier)
+instead of `remove_toxic` (green). Policy allowed it, the 30s veto window
+opened and timed out unvetoed, the action executed, verify passed and the
+incident resolved auto in 34s:
+
+```
+  action restart_dependency   tier=yellow  status=executed  conf=0.80  policy=True (allow_yellow_tier)
+  06:43:28.942 action.proposed           {'tier': 'yellow', 'params': {'service': 'redis'}, ...}
+  06:43:28.978 action.veto_window_opened {'closes_at': '2026-08-07T06:43:58.978Z'}
+  06:43:59.434 action.executed           {'result': {'action': 'restart', 'container': 'redis'}}
+  06:44:00.020 verify.passed
+  06:44:00.024 incident.resolved         {'autonomy': 'auto', 'mttr_seconds': 34}
+```
+
+The test asserts the exact catalog key, so it fails on the action's
+identity, not on whether the incident healed. Two things in that trace
+deserve the reviewer's attention rather than a fix slipped in here. Verify
+passed while the injected toxic was still in place, so the probes called
+a system healthy that the test had not yet un-broken. And
+`restart_dependency` on redis restarts the same container AEGIS uses for
+its own event stream, which is what produced the `failed to publish event`
+lines later in the run.
+
+**`test_error_spike_heals`**. Both the payments incident and its collateral
+gateway one escalated with `gate allowed no proposed action`:
+plan_remediation returned no action at all for an error-rate fault. Nothing
+was denied and nothing crashed, the agent simply proposed nothing.
+
+**`test_veto_during_the_window_escalates_instead_of_healing`**. The same
+scenario needs a yellow action to exist so it can be vetoed. Live, diagnose
+came back with confidence 0.0 and proposed `remove_toxic` for an error-rate
+fault, and OPA denied it on `deny_low_confidence`, so no veto window ever
+opened and the test timed out waiting for one:
+
+```
+  action remove_toxic   tier=green  status=denied  conf=0.0  policy=False (deny_low_confidence)
+  06:33:09.233 action.policy_checked  {'decision': 'deny', 'opa_rule_id': 'deny_low_confidence'}
+  06:33:09.235 incident.escalated     {'reason': 'OPA denied remove_toxic (...)'}
+```
+
+Policy did its job here. The confidence gate is exactly what should stop a
+zero-confidence action, and the test's assumption that a yellow action will
+be available to veto is what did not survive contact with a live model.
+
+**`test_cache_outage_heals`**, and a stall this pass could not explain.
+The test injected at 06:48:35 and timed out at 06:50:05 with
+`no incident for latency_p95/target-orders within 90s`. An incident for
+exactly that pair did open at 06:49:38, inside the window, so the timeout
+and the incident table disagree and this report is not going to guess which
+one is wrong. What is certain is that the run stalled hard around that
+moment. The worker log goes silent for fifteen minutes:
+
+```
+2026-08-07 06:49:28,242 worker failed to publish event 01KZDFQPEWSRBQF67VP943ZJ7C to redis stream:
+2026-08-07 06:49:40,383 worker incident inc_01KZDFR2A8GFXXEV3NGYZTK2S3 opened: latency_p95 on target-orders
+2026-08-07 06:49:52,286 worker HTTP Request: POST http://opa:8181/v1/data/aegis/actions/decision "HTTP/1.1 200 OK"
+2026-08-07 07:05:25,848 worker HTTP Request: POST http://core-executor:8090/execute "HTTP/1.1 200 OK"
+2026-08-07 07:05:25,871 worker failed to publish event 01KZDGMZK4K7B9AJ39PVXYTD6H to redis stream: Connection closed by server.
+```
+
+The suite's own wall clock matches: its last test should have ended around
+06:50:10 and it exited at 07:04:49. Two incidents from that window carry
+the damage in their MTTR, a 30s veto window that took 947s and 3893s to
+reach `action.executed`:
+
+```
+06:49:26 latency_p95 target-gateway  resolved  mttr=3893  auto
+06:49:38 latency_p95 target-orders   resolved  mttr=947   auto
+```
+
+Both eventually healed, one of them an hour after the suite had given up on
+it. The `failed to publish` lines point at Redis, which the run had already
+restarted once via `restart_dependency` and restarted again at 07:54 when
+the second of these finally executed. Whether the stall is Redis, the
+Docker daemon under a 94%-full disk, or the coupling between them is not
+something this pass established, and it is a new observation rather than
+one of the seven defects.
+
+### What was not run, and why
+
+Steps 2 and 3 of this pass, three fresh `collect_live_numbers.py` samples
+each of error_spike and cache_outage and the README table update that
+depends on them, were not run. Six incidents at the ~3,070 tokens a
+resolved incident cost in this run is roughly 18,000 tokens, against the
+3,425 the day had left after the suite. Attempting it would have produced
+half a table and a 429, so **no number in the README moved** and the
+`cache_outage (n=1)` caveat stays. The remaining rows were not re-checked
+against the 20% band either, for the same reason: there is nothing new to
+check them against.
+
+That leaves one item genuinely outstanding for the release decision. A
+clean `make e2e-live` is now a question about three live agent behaviours,
+not about money, and the README's error_spike and cache_outage rows are
+still carrying their phase 6 samples.
+
+### State this section leaves behind
+
+- Branch `phase-7`, tagged `phase-8` on this commit. Nothing pushed, no
+  remote touched, `v0.1.0` not tagged.
+- `.env` back to `MOCK_LLM=1` and the committed default model, never
+  staged, verified against `.env.example`:
+
+```
+$ diff <(redact .env) <(redact .env.example)
+identical to .env.example apart from the redacted secret
+```
+
+- `.env` holds the third key, since the first two are spent. Its daily
+  budget is spent too as of this run.
+- The stack is up in fixture mode. `make down` clears it, including the
+  30 incident rows this run generated.
