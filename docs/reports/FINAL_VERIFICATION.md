@@ -20,6 +20,7 @@ Contents:
 - [Verdict](#verdict)
 - [Phase 7 addendum](#phase-7-addendum)
 - [Live verification](#live-verification)
+- [Phase 9](#phase-9)
 
 ## 0. Post-review fixes
 
@@ -1497,3 +1498,261 @@ identical to .env.example apart from the redacted secret
   budget is spent too as of this run.
 - The stack is up in fixture mode. `make down` clears it, including the
   30 incident rows this run generated.
+
+## Phase 9
+
+Run on 2026-08-07, branch `phase-9` off `phase-7`, same machine and stack as
+the rest of this report. Phase 9 splits the Redis instances, hardens three
+tests against live model variance, and makes a passing verification say
+whether the injected fault was still there. Every command output below is
+pasted from the run.
+
+The live suite was not run. The machine could not hold a stack up long
+enough to make any result mean anything, and the day's token budget is
+untouched because of it. That is the whole of the bad news and it is set out
+with its evidence in "The stack this pass could not keep up" below.
+
+### What changed
+
+| Commit    | What                                                                                              |
+| --------- | ------------------------------------------------------------------------------------------------- |
+| `90a06cf` | Two Redis containers, `shop-redis` and `aegis-redis`, plus the executor's container guard         |
+| `4d84ada` | verify records whether the injected fault survived, in the event payload and the incident summary |
+| `ab2c4e1` | Scenario tests assert the fault is gone instead of asserting one catalog_key                      |
+| `d8328ea` | The veto test seeds its own yellow action instead of waiting for a model to propose one           |
+| `23177cf` | plan_remediation's prompt names all eight catalog keys and forbids an empty plan                  |
+| `050dc89` | Prettier on the two files the above touched                                                       |
+
+### The Redis split
+
+plan/01's runtime topology table was amended before the code: one `redis`
+row becomes `shop-redis` (demo cache, the only Redis a catalog action may
+name) and `aegis-redis` (event stream, in no catalog action at all).
+`restart_dependency`'s enum goes from `[redis, toxiproxy]` to
+`[shop-redis, toxiproxy]`, and `cache_outage` pauses `shop-redis`.
+
+The point of the split, checked against the running stack: pausing the shop
+cache leaves the event bus running, so the incident the outage causes can
+still be published while the fault is in place.
+
+```
+$ curl -s -X POST http://localhost:8080/api/chaos/cache_outage > /dev/null
+$ curl -s http://localhost:8080/api/chaos/cache_outage
+{"scenario":"cache_outage","fault_present":true}
+$ docker inspect -f '{{.State.Status}}' aegis-redis
+running
+$ curl -s -X DELETE http://localhost:8080/api/chaos/cache_outage > /dev/null
+$ curl -s http://localhost:8080/api/chaos/cache_outage
+{"scenario":"cache_outage","fault_present":false}
+```
+
+Behind the enum, `aegis.actions.execute.guard_container` runs on every path
+in `run()` that reaches `docker_ops` and rejects any container outside the
+demo set. The catalog and OPA both already constrain the name; neither of
+them sits between the executor and the Docker socket, and this does. The
+unit tests cover the guard directly, `run()` with `docker_ops` patched to
+raise if it is called at all, and the membership of `DEMO_CONTAINERS`
+itself, so an `aegis-*` name added to that set by a later edit fails a test
+rather than quietly reopening the hole.
+
+```
+$ .venv/bin/python -m pytest apps/core/tests/test_catalog.py -q
+............................                                             [100%]
+28 passed in 2.48s
+```
+
+The gotcha in the brief was to give the two containers distinct hostnames
+everywhere rather than aliasing one to the other. `REDIS_URL` is gone,
+replaced by `SHOP_REDIS_URL` and `AEGIS_REDIS_URL`, and every remaining
+`redis:6379` in the repo is now one of those two explicit hostnames:
+
+```
+$ grep -rn "redis:6379" . | grep -v node_modules | grep -v '\.venv' | grep -v '^\./\.git/'
+.env.example:18:SHOP_REDIS_URL=redis://shop-redis:6379/0
+.env.example:21:AEGIS_REDIS_URL=redis://aegis-redis:6379/0
+plan/phases/phase-9.md:31:- The two Redis containers need distinct hostnames everywhere ...
+apps/core/aegis/actions/execute.py:21:SHOP_REDIS_URL = os.environ.get("SHOP_REDIS_URL", "redis://shop-redis:6379/0")
+```
+
+### Whether the fault survived verification
+
+The phase 8 live run had `test_latency_heals` verify green and resolve in
+34s with the Toxiproxy toxic still installed. The probes were not wrong,
+they were answering a narrower question than a reader assumes. verify now
+asks the chaos API whether the originally injected fault is still there and
+puts the answer in the `verify.passed` / `verify.failed` payload as
+`injected_fault_present`: true, false, or null when the question cannot be
+answered. A pass with the fault still in place also appends a marker to
+`incidents.summary`, so it shows up in the incident list rather than only in
+a container log.
+
+Three things this deliberately does not do. It does not change the probe
+logic, which the brief put out of scope. It does not change routing, since
+`passed` still decides resolve against rollback. And it never reaches a
+prompt: the signal is written to the database and the event log, never back
+onto `state["incident"]`, so no later node can read it as evidence. A chaos
+API that cannot answer returns null rather than an optimistic false.
+
+`GET /chaos/{scenario}` is a new route, added to plan/02's table in the same
+commit and flagged here. `target-payments` grew a `GET /internal/fault` to
+read back the two toggles it already accepted writes for. Neither is on an
+agent path.
+
+### The three tests, and what they now prove
+
+`test_latency_heals` and the other four scenario tests asserted one exact
+catalog_key. That checks which route the model picked, not whether the
+system healed, and it fails in both directions: the phase 8 run failed on
+the action's identity while the incident had genuinely resolved (with the
+fault still live, which the old assertion caught only by accident), and a
+correct heal reached by another legal catalog_key would have failed for no
+reason at all. The assertion is now that the incident resolved, that at
+least one action executed, and that `GET /chaos/{scenario}` reports the
+fault gone. `fault_present` must be false; null fails too, because an
+unanswerable chaos API proves nothing. That is strictly harder to satisfy
+than what it replaced.
+
+`test_veto_during_the_window_escalates_instead_of_healing` needed a live
+model to produce a confident yellow action before it could begin. In the
+phase 8 run the model returned a green `remove_toxic` at confidence 0.0 for
+an error-rate fault, OPA denied it on `deny_low_confidence`, no window
+opened, and the test timed out on a policy engine doing its job.
+`scripts/seed_yellow_action.py` now seeds `rollback_config` on
+target-payments, the action plan/03's chaos table expects error_spike to
+produce, and runs a real gate node so a real 30 second window opens. Same
+technique as the red-tier tests, for the same reason. The seed keeps the
+live `gate_router`, so a veto that fails to land routes to execute and the
+"nothing executed" assertion fails as it should.
+
+The adversarial, approval, chain, evidence pack and reduced-motion tests are
+untouched, as the brief required.
+
+### The prompt iteration
+
+Both error_spike incidents in the phase 8 live run escalated with "gate
+allowed no proposed action": plan_remediation returned no action at all for
+an error-rate fault. The prompt pointed at `get_catalog` for the key list,
+putting the eight keys one tool call away rather than on the page, and never
+said that an empty plan is not an answer. Both are fixed: the keys are in a
+table with the condition each one suits, the error-rate case maps explicitly
+to `rollback_config`, and the output section requires 1 or 2 entries with
+instructions to name the closest key at low confidence rather than nothing.
+Policy still decides what runs. One iteration, no model swap.
+
+### make lint test
+
+```
+$ make lint test
+ruff:     All checks passed!
+mypy:     Success: no issues found in 51 source files
+eslint:   (clean, both workspaces)
+prettier: All matched files use Prettier code style!
+pytest:   84 passed, 2 warnings in 12.73s
+opa:      PASS: 9/9
+```
+
+84 unit tests against phase 7's 74: the ten new ones are the container
+guard, the catalog enum, `chaos.base_scenario` and the chaos status route.
+
+### The stack this pass could not keep up
+
+`MOCK_LLM=1 make e2e` and `make e2e-live` were not completed, and the reason
+is the machine rather than the code.
+
+The first fixture attempt was killed at `..FF.FFEEE`. Its failures are not
+attributable to anything: `aegis-db` was crash-looping underneath it.
+
+```
+10:53:24 [1] LOG:  server process (PID 1389) exited with exit code 2
+10:53:24 [1] LOG:  terminating any other active server processes
+10:53:30 [1] LOG:  all server processes terminated; reinitializing
+10:56:13 [1515] LOG: syncing data directory (fsync), elapsed time: 10.00 s
+10:56:24 [1515] LOG: syncing data directory (fsync), elapsed time: 20.17 s
+```
+
+```
+psycopg.OperationalError: consuming input failed: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+```
+
+A `fsync` of a data directory taking 10 to 20 seconds is I/O starvation, not
+load. Two other symptoms agreed: the Docker daemon could not read its own
+snapshotter, and a trivial request from the host took 1.4 to 2.2 seconds
+against the 20 to 280 milliseconds it takes on a healthy stack.
+
+```
+$ docker system df
+Error response from daemon: failed to retrieve container list: snapshotter.Usage failed for bba8a7e0...:
+lstat /var/lib/desktop-containerd/.../snapshots/2219/fs/data/tempo/wal/blocks/single-tenant/b26f032c-...: no such file or directory
+```
+
+Three rounds of remediation followed: `docker builder prune -af` (9.99GB),
+a full stop of every Docker process and a relaunch, which fixed the
+snapshotter and the host latency, then `docker image prune -af` and a second
+builder prune, taking the volume from 12Gi free (94%) to 29Gi (84%) and the
+VM's own images from 13.23GB to 2.74GB.
+
+None of it held. The second fixture attempt opened 60 incidents and
+escalated 60, resolving none, while the database restarted underneath it
+again. The third attempt never got that far: `make up` itself failed.
+
+```
+$ make up
+ Container target-payments  Error
+dependency failed to start: container shop-db is unhealthy
+make: *** [up] Error 1
+
+$ docker inspect -f '{{.State.Health.Status}} failing={{.State.Health.FailingStreak}}' shop-db
+unhealthy failing=16
+15:31:12 [1] LOG:  all server processes terminated; reinitializing
+15:31:31 [164] LOG:  syncing data directory (fsync), elapsed time: 10.00 s
+```
+
+Pruning Docker is a treadmill here rather than a fix, and the arithmetic
+says why: each prune frees space that the rebuild it forces then consumes,
+29Gi back down to 20Gi in one `make up`. Docker holds about 8GB in total.
+The 155Gi in use on that volume is not Docker's. Until tens of GB are freed
+outside Docker, this stack cannot be relied on to stay up, and no number
+measured on it means anything.
+
+### The budget, and why it was not spent
+
+`make e2e-live` costs about 96,575 tokens of a 100,000 per day free-tier
+key, which is one run per key per day with 3.4% to spare (see
+[Live verification](#live-verification)). Spending that on a stack whose
+database restarts every few minutes would have measured the database. The
+budget was confirmed fresh at the start of this pass and is still fresh at
+the end of it, minus a ten-token probe:
+
+```
+HTTP/2 200
+x-ratelimit-limit-requests: 1000
+x-ratelimit-remaining-requests: 999
+```
+
+`scripts/collect_live_numbers.py` was not run either, so no number in the
+README moved and the `cache_outage (n=1)` caveat stays. A second key with an
+untouched budget is on hand for that step when the machine can support it.
+
+### Defect table
+
+| #   | Severity | What                                                                                                                                                            | Status                                     |
+| --- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| 8   | high     | One Redis served both the shop cache and the event stream, so `restart_dependency` could restart AEGIS's own event bus mid-incident                             | fixed (phase 9)                            |
+| 9   | medium   | verify could pass, and an incident resolve, with the injected fault still in place, visible only in a container log                                             | fixed (phase 9)                            |
+| 10  | medium   | Three e2e tests failed on live model variance rather than on behaviour: two on an exact catalog_key, one on needing a model to propose a vetoable yellow action | fixed (phase 9)                            |
+| 11  | medium   | plan_remediation proposed no action at all for an error-rate fault                                                                                              | prompt iterated (phase 9), unverified live |
+| 12  | high     | The stack cannot stay up on this machine: both Postgres containers crash-loop under I/O starvation and `make up` fails                                          | open, machine-level                        |
+
+### State this section leaves behind
+
+- Branch `phase-9`, six commits, tagged `phase-9`. Nothing pushed, no remote
+  touched, `v0.1.0` not tagged.
+- `.env` is on `MOCK_LLM=1` and the committed default model, never staged.
+  It gained `SHOP_REDIS_URL` and `AEGIS_REDIS_URL` in place of `REDIS_URL`,
+  matching `.env.example`.
+- The stack is down and will not come up until the machine has disk headroom.
+- Outstanding for the release decision: a clean `MOCK_LLM=1 make e2e` at
+  18/18, then `make e2e-live` at 18/18, then the two-scenario number
+  collection. All three are blocked on defect 12, not on code.
