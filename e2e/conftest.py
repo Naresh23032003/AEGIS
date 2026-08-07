@@ -15,8 +15,12 @@ import httpx
 import pytest
 
 API_URL = os.environ.get("E2E_API_URL", "http://localhost:8080")
+CONSOLE_URL = os.environ.get("E2E_CONSOLE_URL", "http://localhost:3000")
 DETECT_TIMEOUT_SECONDS = 90  # generous: PromQL rate()[1m] windows vary, see PHASE_1_REPORT.md
 RESOLVE_TIMEOUT_SECONDS = 240
+# The final verification's UI walkthrough ran at this size; the console
+# gates itself off below a desktop width (DesktopOnlyGate.tsx).
+VIEWPORT = {"width": 1600, "height": 1000}
 
 
 @pytest.fixture(autouse=True)
@@ -52,6 +56,24 @@ def _ensure_worker_running() -> None:
 def client() -> httpx.Client:
     with httpx.Client(base_url=API_URL, timeout=10.0) as c:
         yield c
+
+
+@pytest.fixture(scope="session")
+def browser() -> Any:
+    """Real Chromium for the two assertions that only exist in a browser:
+    a parked approval surviving a page reload, and the forced 3D scene
+    holding still under reduced motion. Both were found by hand in the
+    final verification pass (defects 5 and 6); a headless browser in the
+    suite is what stops them coming back. `make e2e` installs the browser
+    binary first, see the Makefile's `browsers` target."""
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        instance = p.chromium.launch()
+        try:
+            yield instance
+        finally:
+            instance.close()
 
 
 def wait_for_incident(

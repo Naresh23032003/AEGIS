@@ -12,3 +12,10 @@ types-docker==7.2.0.20260728
 types-PyYAML==6.0.12.20260724
 # phase 6: e2e assertion that the evidence pack's report.pdf actually opens.
 pypdf==6.1.3
+# phase 7: the two e2e assertions that only exist in a browser, a parked
+# approval surviving a page reload and the forced 3D scene holding still
+# under reduced motion. 1.62.0 is the newest Python release; the final
+# verification drove 1.62.1 through npx, same Chromium build. The browser
+# binary is not part of the wheel, so `make e2e` runs
+# `playwright install chromium` first (Makefile, browsers target).
+playwright==1.62.0

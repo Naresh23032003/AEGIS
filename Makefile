@@ -1,5 +1,5 @@
 .PHONY: up down contracts contracts-python contracts-ts test test-python test-ts opa-test \
-        e2e e2e-live record-fixtures lint lint-python lint-ts venv env node-modules
+        e2e e2e-live record-fixtures lint lint-python lint-ts venv env node-modules browsers
 
 COMPOSE := docker compose -f deploy/docker-compose.yml
 PY := .venv/bin/python
@@ -75,12 +75,20 @@ lint-ts:
 	npm run lint
 	npm run format:check
 
+# Chromium for the browser half of the e2e suite. The pip wheel carries no
+# browser binary, so a clean clone would otherwise collect two tests it
+# cannot run, the same shape of gap the phase 6 stranger test found in
+# `make venv`. Already-installed is a fast no-op, so `e2e` can just depend
+# on it.
+browsers: venv
+	$(PY) -m playwright install chromium
+
 # e2e: scenario suite against a running stack (`make up` first). MOCK_LLM
 # is inherited from the shell so `MOCK_LLM=1 make e2e` runs on fixtures.
-e2e:
+e2e: browsers
 	$(PY) -m pytest e2e -q
 
-e2e-live:
+e2e-live: browsers
 	MOCK_LLM=0 $(PY) -m pytest e2e -q
 
 record-fixtures:

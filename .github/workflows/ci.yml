@@ -38,6 +38,11 @@ jobs:
       - name: Bring up the stack (MOCK_LLM=1, no API key needed)
         run: make up
 
+      # `make e2e` installs the Chromium binary itself (Makefile, browsers
+      # target); only the shared libraries it links against need root.
+      - name: Chromium system libraries
+        run: sudo .venv/bin/python -m playwright install-deps chromium
+
       - name: e2e (fixtures only)
         run: MOCK_LLM=1 make e2e
 
