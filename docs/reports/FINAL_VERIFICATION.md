@@ -869,3 +869,33 @@ the same provisioning a clean clone gets. `18677df` adds three cases to
   that instead. The 2D renderer assertion (it stays 2D, it shows the loop
   reaching resolved) holds either way, and `test_crash_heals` passes in the
   fixture suite.
+
+## Repo gate after every fix
+
+`scripts/gate.sh 6` re-run on `2bbf64a`, with all four fixes and this report
+in the tree. It re-runs the em dash and security greps, `make lint test`,
+and the full fixture e2e:
+
+```
+### gate.sh 6 rerun 2026-08-07T03:47:13Z
+gate: phase 6 clean
+### exit=0
+
+$ tail -3 /tmp/gate_e2e.log
+.venv/bin/python -m pytest e2e -q
+...............                                                          [100%]
+15 passed in 602.34s (0:10:02)
+```
+
+The first run of the gate did fail, on `prettier --check` against this file
+before it was formatted. Recorded because the rule is that pasted output is
+the evidence: the failure was in the report's own markdown, not in the code.
+
+## State this pass left behind
+
+- Branch `phase-6`, five fix commits plus this report. Nothing pushed, no
+  remote touched, no tag created or moved. `phase-6` still points where it
+  did.
+- `.env` restored to its committed defaults and never staged.
+- The stack is up in fixture mode (`MOCK_LLM=1`). `make down` clears it,
+  including the incident rows this pass generated.
