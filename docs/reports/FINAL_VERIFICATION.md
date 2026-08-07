@@ -1507,10 +1507,13 @@ tests against live model variance, and makes a passing verification say
 whether the injected fault was still there. Every command output below is
 pasted from the run.
 
-The live suite was not run. The machine could not hold a stack up long
-enough to make any result mean anything, and the day's token budget is
-untouched because of it. That is the whole of the bad news and it is set out
-with its evidence in "The stack this pass could not keep up" below.
+The fixture suite passes 18/18. The live suite reaches 17 of 18, against 14
+of 18 in phase 8, and the one failure is `test_latency_heals` failing on the
+new assertion for the right reason: the incident healed while the fault that
+caused it was still in place. That is recorded and left alone, per the
+brief. The first attempt at this pass, a day earlier, produced nothing
+usable because the machine could not keep a database up; that is set out in
+"The machine, and the day it cost".
 
 ### What changed
 
@@ -1654,105 +1657,207 @@ opa:      PASS: 9/9
 84 unit tests against phase 7's 74: the ten new ones are the container
 guard, the catalog enum, `chaos.base_scenario` and the chaos status route.
 
-### The stack this pass could not keep up
+### The machine, and the day it cost
 
-`MOCK_LLM=1 make e2e` and `make e2e-live` were not completed, and the reason
-is the machine rather than the code.
-
-The first fixture attempt was killed at `..FF.FFEEE`. Its failures are not
-attributable to anything: `aegis-db` was crash-looping underneath it.
+The first attempt at this pass, on 2026-08-07, never produced a valid run.
+Both Postgres containers crash-looped under I/O starvation with the volume
+at 94% (12Gi free), `fsync` of a data directory taking 10 to 32 seconds:
 
 ```
 10:53:24 [1] LOG:  server process (PID 1389) exited with exit code 2
-10:53:24 [1] LOG:  terminating any other active server processes
 10:53:30 [1] LOG:  all server processes terminated; reinitializing
-10:56:13 [1515] LOG: syncing data directory (fsync), elapsed time: 10.00 s
 10:56:24 [1515] LOG: syncing data directory (fsync), elapsed time: 20.17 s
-```
-
-```
 psycopg.OperationalError: consuming input failed: server closed the connection unexpectedly
-	This probably means the server terminated abnormally
-	before or while processing the request.
 ```
 
-A `fsync` of a data directory taking 10 to 20 seconds is I/O starvation, not
-load. Two other symptoms agreed: the Docker daemon could not read its own
-snapshotter, and a trivial request from the host took 1.4 to 2.2 seconds
-against the 20 to 280 milliseconds it takes on a healthy stack.
+One fixture attempt opened 60 incidents and escalated 60, resolving none.
+It was killed rather than reported, because it measured the disk. A later
+`make up` failed outright on `container shop-db is unhealthy`
+(`FailingStreak=16`). Three rounds of Docker pruning and a daemon restart
+did not hold: each prune freed space that the rebuild it forced consumed
+again, 29Gi back to 20Gi in a single `make up`. Docker held about 8GB in
+total, so pruning it was the wrong lever, and the entry above about the
+`snapshotter.Usage` error and the 1.4 to 2.2 second `healthz` is the
+signature to check for next time.
+
+Freeing non-Docker disk is what fixed it. At 33Gi free (82%) the whole
+stack came up healthy in 21 seconds:
 
 ```
-$ docker system df
-Error response from daemon: failed to retrieve container list: snapshotter.Usage failed for bba8a7e0...:
-lstat /var/lib/desktop-containerd/.../snapshots/2219/fs/data/tempo/wal/blocks/single-tenant/b26f032c-...: no such file or directory
+$ curl -s -o /dev/null -w "%{time_total}\n" http://localhost:8080/healthz
+0.002364
+0.001635
+0.001691
+$ docker logs aegis-aegis-db-1 | grep -c "all server processes terminated"
+0
 ```
 
-Three rounds of remediation followed: `docker builder prune -af` (9.99GB),
-a full stop of every Docker process and a relaunch, which fixed the
-snapshotter and the host latency, then `docker image prune -af` and a second
-builder prune, taking the volume from 12Gi free (94%) to 29Gi (84%) and the
-VM's own images from 13.23GB to 2.74GB.
+Milliseconds against seconds, and zero database restarts across both suites
+that followed. Every number below was measured on that stack.
 
-None of it held. The second fixture attempt opened 60 incidents and
-escalated 60, resolving none, while the database restarted underneath it
-again. The third attempt never got that far: `make up` itself failed.
+### Fixture e2e: 18/18
 
 ```
-$ make up
- Container target-payments  Error
-dependency failed to start: container shop-db is unhealthy
-make: *** [up] Error 1
-
-$ docker inspect -f '{{.State.Health.Status}} failing={{.State.Health.FailingStreak}}' shop-db
-unhealthy failing=16
-15:31:12 [1] LOG:  all server processes terminated; reinitializing
-15:31:31 [164] LOG:  syncing data directory (fsync), elapsed time: 10.00 s
+### fixture e2e 2026-08-07
+MOCK_LLM=1 .venv/bin/python -m pytest e2e -q
+..................                                                       [100%]
+18 passed in 1020.18s (0:17:00)
 ```
 
-Pruning Docker is a treadmill here rather than a fix, and the arithmetic
-says why: each prune frees space that the rebuild it forces then consumes,
-29Gi back down to 20Gi in one `make up`. Docker holds about 8GB in total.
-The 155Gi in use on that volume is not Docker's. Until tens of GB are freed
-outside Docker, this stack cannot be relied on to stay up, and no number
-measured on it means anything.
-
-### The budget, and why it was not spent
-
-`make e2e-live` costs about 96,575 tokens of a 100,000 per day free-tier
-key, which is one run per key per day with 3.4% to spare (see
-[Live verification](#live-verification)). Spending that on a stack whose
-database restarts every few minutes would have measured the database. The
-budget was confirmed fresh at the start of this pass and is still fresh at
-the end of it, minus a ten-token probe:
+The new `injected_fault_present` signal on every heal in that run:
 
 ```
-HTTP/2 200
-x-ratelimit-limit-requests: 1000
-x-ratelimit-remaining-requests: 999
+latency_p95  mttr= 41s verify.passed  injected_fault_present=False
+latency_p95  mttr= 55s verify.passed  injected_fault_present=False
+service_down mttr=  7s verify.passed  injected_fault_present=False
+error_rate   mttr= 81s verify.passed  injected_fault_present=False
+service_down mttr=  6s verify.passed  injected_fault_present=False
 ```
 
-`scripts/collect_live_numbers.py` was not run either, so no number in the
-README moved and the `cache_outage (n=1)` caveat stays. A second key with an
-untouched budget is on hand for that step when the machine can support it.
+### Live e2e: 17/18, and the one failure is the point
+
+`.env` was switched to `MOCK_LLM=0` and the containers recreated, since the
+worker reads that variable from the file rather than from the make
+invocation. Confirmed before starting, because a live run that silently
+serves fixtures proves nothing:
+
+```
+$ docker exec aegis-core-worker-1 printenv MOCK_LLM
+0
+```
+
+```
+### live e2e start 2026-08-07T19:47:07Z LLM_LARGE=llama-3.3-70b-versatile
+MOCK_LLM=0 .venv/bin/python -m pytest e2e -q
+FAILED e2e/test_scenarios.py::test_latency_heals - AssertionError: latency: i...
+1 failed, 17 passed in 1188.39s (0:19:48)
+### live e2e end 2026-08-07T20:06:58Z
+```
+
+17 of 18, against 14 of 18 in the phase 8 run. The three tests phase 9 set
+out to make survive live model variance all pass:
+`test_error_spike_heals`, `test_cache_outage_heals` and
+`test_veto_during_the_window_escalates_instead_of_healing`. The prompt
+iteration held, since no incident escalated with "gate allowed no proposed
+action" this time.
+
+The failure is `test_latency_heals`, and it is the same live model
+behaviour as phase 8 caught for a better reason:
+
+```
+AssertionError: latency: incident inc_01KZEWWT9R5E8KDEBWVSR0ZABZ resolved but
+fault_present=True after actions ['restart_dependency']
+```
+
+The trace, with the injected Toxiproxy toxic still installed throughout:
+
+```
+19:58:39.931  incident.detected     latency_p95 target-orders  p95=4458.33ms
+19:58:43.202  action.proposed       restart_dependency tier=yellow params={'service': 'shop-redis'} conf=0.8
+19:58:43.236  action.policy_checked allow rule=allow_yellow_tier
+19:58:43.237  action.veto_window_opened  closes_at 19:59:13.237Z
+19:59:13.919  action.executed       restart_dependency -> {'action': 'restart', 'container': 'shop-redis'}
+19:59:14.291  verify.passed         injected_fault_present=True
+19:59:14.294  incident.resolved     mttr=34s autonomy=auto
+```
+
+Every component did its job. Detection fired on real latency, triage
+classified it, policy allowed a legal yellow action, the veto window opened
+and timed out unvetoed, the executor restarted exactly the container it was
+asked to, and the probes found a healthy system because restarting the cache
+did clear the symptom. The diagnosis was wrong: 1500ms of Toxiproxy latency
+between target-orders and its database is not a cache fault, and
+`remove_toxic` was the green action that would have removed it.
+
+What phase 9 changed is that this is now recorded rather than trusted. The
+same thing happened in phase 8 at the same 34 second MTTR, and the report
+could only note it after reading a container log by hand. This run wrote it
+into the hash-chained event log at the moment of the verdict, and onto the
+incident itself:
+
+```
+$ curl -s .../api/incidents/inc_01KZEWWT9R5E8KDEBWVSR0ZABZ
+status  : resolved | mttr 34 | autonomy auto
+summary : p95 latency on target-orders is 4458.33ms, exceeding the threshold
+          of 1000ms. [injected fault still present at verify]
+```
+
+A reader scanning the incident list sees the marker. A reader opening the
+timeline sees `injected_fault_present=True` next to `verify.passed`. The old
+assertion would have failed this run too, but on the action's identity,
+which is the right verdict for the wrong reason and would equally have
+failed a correct heal that took another legal route.
+
+Per the phase 9 brief, this is recorded and left alone: it fails on live
+model quality, not infrastructure, so no model was substituted and no
+assertion was loosened to make it pass.
+
+### Cost, and a correction to the phase 8 budget arithmetic
+
+```
+agent runs: 87, tokens_in 101456, tokens_out 6246, total 107702, cost $0.04792
+incidents opened during the live run: 29
+   21 resolved, 8 escalated
+resolved: 21, avg mttr 31s, fastest 2s
+```
+
+```
+$ docker logs aegis-core-worker-1 | grep -c "Rate limit"
+0
+```
+
+107,702 tokens and not one 429, which the phase 8 report would have called
+impossible against a 100,000 per day limit. That report was wrong on one
+point: the limit is per model, not per key. Split by model:
+
+| Model                   | Runs | Tokens | Share of its own 100,000 |
+| ----------------------- | ---- | ------ | ------------------------ |
+| llama-3.3-70b-versatile | 44   | 76,942 | 77%                      |
+| llama-3.1-8b-instant    | 43   | 30,760 | 31%                      |
+
+Phase 8 measured 96,575 across both models, read it against a single cap and
+concluded there was 3.4% of the day left. The real figure was the large
+model's share, and there was more room than it thought. Its conclusion about
+defect 3 stands, since the storm was real and removing it did bring the
+suite under; only the headroom arithmetic was off. The suite costs about
+77,000 large-model tokens, so two runs a day on one key is the real ceiling,
+not one.
+
+### collect_live_numbers: gated, not run
+
+The brief gates the three-sample collection and the README table update on
+the live suite passing. At 17 of 18 it did not, so neither ran, no number in
+the README moved, and the `cache_outage (n=1)` caveat stays. This is a
+deliberate stop, not a budget problem: the large model had 23,000 tokens of
+its day left, which is enough for the roughly 18,000 the collection needs.
 
 ### Defect table
 
-| #   | Severity | What                                                                                                                                                            | Status                                     |
-| --- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| 8   | high     | One Redis served both the shop cache and the event stream, so `restart_dependency` could restart AEGIS's own event bus mid-incident                             | fixed (phase 9)                            |
-| 9   | medium   | verify could pass, and an incident resolve, with the injected fault still in place, visible only in a container log                                             | fixed (phase 9)                            |
-| 10  | medium   | Three e2e tests failed on live model variance rather than on behaviour: two on an exact catalog_key, one on needing a model to propose a vetoable yellow action | fixed (phase 9)                            |
-| 11  | medium   | plan_remediation proposed no action at all for an error-rate fault                                                                                              | prompt iterated (phase 9), unverified live |
-| 12  | high     | The stack cannot stay up on this machine: both Postgres containers crash-loop under I/O starvation and `make up` fails                                          | open, machine-level                        |
+| #   | Severity | What                                                                                                                                                  | Status                    |
+| --- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| 8   | high     | One Redis served both the shop cache and the event stream, so `restart_dependency` could restart AEGIS's own event bus mid-incident                   | fixed (phase 9)           |
+| 9   | medium   | verify could pass, and an incident resolve, with the injected fault still in place, visible only in a container log                                   | fixed (phase 9)           |
+| 10  | medium   | Three e2e tests failed on live model variance rather than on behaviour                                                                                | fixed (phase 9), 3/3 live |
+| 11  | medium   | plan_remediation proposed no action at all for an error-rate fault                                                                                    | fixed (phase 9), live     |
+| 12  | high     | The stack could not stay up: both Postgres containers crash-looped under I/O starvation and `make up` failed                                          | fixed, disk freed         |
+| 13  | medium   | Live diagnose reads Toxiproxy database latency as a cache fault, so `latency` heals with `restart_dependency` and the toxic survives a passing verify | open, live model quality  |
+
+Defect 13 is what stands between this branch and 18/18. It is a diagnosis
+quality problem, not a safety one: the wrong action was legal, reversible,
+policy-approved and openly recorded, and the run that took it is now
+labelled as having left its fault in place. The brief allowed one prompt
+iteration this pass and it was spent on plan_remediation, which the live run
+confirms worked.
 
 ### State this section leaves behind
 
-- Branch `phase-9`, six commits, tagged `phase-9`. Nothing pushed, no remote
-  touched, `v0.1.0` not tagged.
-- `.env` is on `MOCK_LLM=1` and the committed default model, never staged.
-  It gained `SHOP_REDIS_URL` and `AEGIS_REDIS_URL` in place of `REDIS_URL`,
-  matching `.env.example`.
-- The stack is down and will not come up until the machine has disk headroom.
-- Outstanding for the release decision: a clean `MOCK_LLM=1 make e2e` at
-  18/18, then `make e2e-live` at 18/18, then the two-scenario number
-  collection. All three are blocked on defect 12, not on code.
+- Branch `phase-9`, tagged `phase-9`. Nothing pushed, no remote touched,
+  `v0.1.0` not tagged.
+- `.env` back to `MOCK_LLM=1` and the committed default model, never staged,
+  structurally identical to `.env.example`. It carries `SHOP_REDIS_URL` and
+  `AEGIS_REDIS_URL` in place of `REDIS_URL`.
+- The stack is up in fixture mode. `make down` clears it, including the 29
+  incident rows the live run generated.
+- Outstanding for the release decision: defect 13, and behind it the
+  three-sample collection and the README table update that the brief gates
+  on a clean live suite.
