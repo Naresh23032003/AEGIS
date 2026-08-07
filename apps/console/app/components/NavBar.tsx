@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Activity, BarChart3, Command, ShieldCheck, Zap } from "lucide-react";
 
+import { withViewParam } from "../lib/viewParam";
 import { ConnectionBadge } from "./ConnectionBadge";
 
 const LINKS = [
@@ -21,7 +22,10 @@ export function NavBar() {
       style={{ borderColor: "var(--aegis-border)", background: "var(--aegis-surface)" }}
     >
       <div className="flex min-w-0 items-center gap-3 sm:gap-6">
-        <Link href="/" className="flex shrink-0 items-center gap-2 focus-visible:outline-none">
+        <Link
+          href={withViewParam("/")}
+          className="flex shrink-0 items-center gap-2 focus-visible:outline-none"
+        >
           <ShieldCheck size={18} style={{ color: "var(--aegis-accent)" }} aria-hidden />
           <span className="font-mono-data text-sm font-semibold tracking-wide">AEGIS</span>
         </Link>
@@ -31,7 +35,7 @@ export function NavBar() {
             return (
               <Link
                 key={href}
-                href={href}
+                href={withViewParam(href)}
                 aria-current={active ? "page" : undefined}
                 className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs transition-colors duration-200"
                 style={{

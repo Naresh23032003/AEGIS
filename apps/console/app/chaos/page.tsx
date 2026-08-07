@@ -6,6 +6,7 @@ import { Skull, Zap } from "lucide-react";
 
 import { ApiError, clearChaos, injectChaos } from "../lib/api";
 import { activeScenarios } from "../lib/chaosState";
+import { withViewParam } from "../lib/viewParam";
 import { useVisibleEvents } from "../store/events";
 import { SCENARIOS } from "./scenarios";
 
@@ -29,7 +30,7 @@ export default function ChaosPanel() {
       // instead follows whichever incident is newest once one appears (see
       // OpsConsole's auto-follow effect).
       await injectChaos(scenario);
-      router.push("/");
+      router.push(withViewParam("/"));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "injection failed");
     } finally {

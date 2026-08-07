@@ -11,3 +11,14 @@ export function readViewParam(): ViewParam {
   const v = new URLSearchParams(window.location.search).get("view");
   return v === "2d" || v === "3d" ? v : null;
 }
+
+/** Carries an explicit ?view= override across an in-app navigation. Without
+ * it the override only survives while you stay on one route: the chaos panel
+ * pushes to "/" right after injecting, so someone who forced ?view=2d
+ * (a machine whose WebGL is broken, the reason the override exists) landed
+ * back on the 3D canvas the moment they triggered the demo. Found by the
+ * final verification UI walkthrough, docs/reports/FINAL_VERIFICATION.md. */
+export function withViewParam(path: string): string {
+  const view = readViewParam();
+  return view ? `${path}?view=${view}` : path;
+}
