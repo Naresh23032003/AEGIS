@@ -26,9 +26,9 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from ulid import ULID
 
-from aegis import approvals, chain, chaos, db, security
+from aegis import approvals, chaos, db, evidence_pack, security
 from aegis.actions.catalog import load_catalog
-from aegis.events import emit, format_ts
+from aegis.events import emit, format_ts, verify_row_chain
 from aegis.redis_stream import STREAM_KEY, get_redis
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s api %(message)s")
@@ -329,23 +329,22 @@ async def verify_chain(incident_id: str) -> dict[str, Any]:
             "FROM aegis.incident_events WHERE incident_id = $1 ORDER BY seq ASC",
             incident_id,
         )
-    prev_hash = incident_id
-    for row in rows:
-        payload = row["payload"]
-        if isinstance(payload, str):
-            payload = json.loads(payload)
-        envelope = {
-            "id": row["event_id"],
-            "ts": format_ts(row["created_at"]),
-            "type": row["type"],
-            "incident_id": incident_id,
-            "actor": row["actor"],
-            "payload": payload,
-        }
-        if row["prev_hash"] != prev_hash or chain.next_hash(prev_hash, envelope) != row["hash"]:
-            return {"valid": False, "break_at_seq": row["seq"]}
-        prev_hash = row["hash"]
-    return {"valid": True, "break_at_seq": None}
+    return verify_row_chain(incident_id, rows)
+
+
+@app.get("/api/incidents/{incident_id}/evidence-pack")
+async def get_evidence_pack(incident_id: str) -> Response:
+    async with db.connection() as conn:
+        data = await evidence_pack.load(conn, incident_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="incident not found")
+    return Response(
+        content=evidence_pack.build_zip(data),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="evidence-pack-{incident_id}.zip"'
+        },
+    )
 
 
 @app.post("/api/keys")

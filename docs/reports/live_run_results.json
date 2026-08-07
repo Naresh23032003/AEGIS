@@ -1,0 +1,132 @@
+[
+  {
+    "scenario": "latency",
+    "incident_id": "inc_01KZC94CY4A9YA599FKYZN324T",
+    "status": "resolved",
+    "autonomy": "auto",
+    "mttr_seconds": 77,
+    "cost_usd": 0.00274,
+    "actions_executed": ["remove_toxic"],
+    "model": "openai/gpt-oss-120b"
+  },
+  {
+    "scenario": "latency",
+    "incident_id": "inc_01KZC9K0BB17BZGE5A8FX9YQJP",
+    "status": "resolved",
+    "autonomy": "auto",
+    "mttr_seconds": 51,
+    "cost_usd": 0.00245,
+    "actions_executed": ["remove_toxic"],
+    "model": "openai/gpt-oss-120b"
+  },
+  {
+    "scenario": "latency",
+    "incident_id": "inc_01KZCACCEA4JPKCG7GKF1SM2FK",
+    "status": "resolved",
+    "autonomy": "auto",
+    "mttr_seconds": 147,
+    "cost_usd": 0.00222,
+    "actions_executed": ["remove_toxic"],
+    "model": "openai/gpt-oss-20b"
+  },
+  {
+    "scenario": "crash",
+    "incident_id": "inc_01KZC9NA64A6NJRX55JZ06C02S",
+    "status": "resolved",
+    "autonomy": "auto",
+    "mttr_seconds": 87,
+    "cost_usd": 0.00158,
+    "actions_executed": ["restart_service"],
+    "model": "openai/gpt-oss-120b"
+  },
+  {
+    "scenario": "crash",
+    "incident_id": "inc_01KZC9RPG21WR52JSN0JFP5AKS",
+    "status": "resolved",
+    "autonomy": "auto",
+    "mttr_seconds": 36,
+    "cost_usd": 0.00156,
+    "actions_executed": ["restart_service"],
+    "model": "openai/gpt-oss-120b"
+  },
+  {
+    "scenario": "crash",
+    "incident_id": "inc_01KZCAHKKQN1XPS6F8PTKHTQ7B",
+    "status": "resolved",
+    "autonomy": "auto",
+    "mttr_seconds": 59,
+    "cost_usd": 0.00123,
+    "actions_executed": ["restart_service"],
+    "model": "openai/gpt-oss-20b"
+  },
+  {
+    "scenario": "error_spike",
+    "incident_id": "inc_01KZCAMBZ5BSJVVF8CSADTBC7J",
+    "status": "resolved",
+    "autonomy": "auto",
+    "mttr_seconds": 108,
+    "cost_usd": 0.0026,
+    "actions_executed": ["rollback_config"],
+    "model": "openai/gpt-oss-20b"
+  },
+  {
+    "scenario": "error_spike",
+    "incident_id": "inc_01KZCAS47C4ZASW8H8J2T2T6J5",
+    "status": "resolved",
+    "autonomy": "auto",
+    "mttr_seconds": 144,
+    "cost_usd": 0.00343,
+    "actions_executed": ["rollback_config"],
+    "model": "openai/gpt-oss-20b"
+  },
+  {
+    "scenario": "error_spike",
+    "incident_id": "inc_01KZCAYZ718AVB0YB2NV6E28TC",
+    "status": "resolved",
+    "autonomy": "auto",
+    "mttr_seconds": 143,
+    "cost_usd": 0.00285,
+    "actions_executed": ["rollback_config"],
+    "model": "openai/gpt-oss-20b"
+  },
+  {
+    "scenario": "memory_leak",
+    "incident_id": "inc_01KZCB4N16VST0MPW04SNZGBC7",
+    "status": "resolved",
+    "autonomy": "auto",
+    "mttr_seconds": 7,
+    "cost_usd": 0.00154,
+    "actions_executed": ["restart_service"],
+    "model": "openai/gpt-oss-20b"
+  },
+  {
+    "scenario": "memory_leak",
+    "incident_id": "inc_01KZCB61B1D46C5W1T6VCYM3C8",
+    "status": "resolved",
+    "autonomy": "auto",
+    "mttr_seconds": 5,
+    "cost_usd": 0.00149,
+    "actions_executed": ["restart_service"],
+    "model": "openai/gpt-oss-20b"
+  },
+  {
+    "scenario": "memory_leak",
+    "incident_id": "inc_01KZCC34FTZQT8VPADWCNMCZWK",
+    "status": "resolved",
+    "autonomy": "auto",
+    "mttr_seconds": 50,
+    "cost_usd": 0.00252,
+    "actions_executed": ["restart_service"],
+    "model": "qwen/qwen3.6-27b"
+  },
+  {
+    "scenario": "cache_outage",
+    "incident_id": "inc_01KZCBKFC7HTEBWM6GEHHEGTN1",
+    "status": "resolved",
+    "autonomy": "auto",
+    "mttr_seconds": 136,
+    "cost_usd": 0.00233,
+    "actions_executed": ["remove_toxic"],
+    "model": "openai/gpt-oss-20b"
+  }
+]
