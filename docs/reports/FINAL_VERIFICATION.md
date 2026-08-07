@@ -302,39 +302,41 @@ Left unfixed on purpose. plan/03-agents-and-policy.md says only "dedupe
 while an incident is open", so re-opening after an escalation is what the
 spec asks for; adding an escalation cooldown, or scoping the gateway rules
 so a downstream failure does not fire them, is a design decision for the
-spec, not something to slip into a verification pass. Nothing is lost or
-corrupted and no test fails. The cost is a demo-visible one: during a live
-error_spike the incident feed fills with escalated gateway rows, one every
-five seconds, next to the real incident.
+spec, not something to slip into a verification pass.
+
+**Severity raised to high after section 3.** On fixtures this looks like
+cosmetic noise, since nothing is lost, no test fails, and the only visible
+cost is an incident feed full of escalated gateway rows. The live run
+measured what it actually costs: 60 incidents opened in nine minutes, 49
+of them escalating, and 79% of a 100,000-token daily budget spent on
+incidents that were never going to heal. That is what stops
+`make e2e-live` from finishing on a free-tier key. See section 3 for the
+numbers.
 
 ## 3. Live e2e
 
-Not verifiable on 2026-08-07. Both the committed `LLM_LARGE` and the one
-substitute this pass was authorised to use had spent their Groq free-tier
-daily token budget before the suite could finish. Recorded here in full
-rather than smoothed over.
+Partially verified. On a fresh Groq key the live path demonstrably works,
+10 of 15 tests pass, and five incidents healed end to end against real
+model calls. The suite still does not finish, and this run finally shows
+why with numbers: defect 3's re-open storm spends the entire free-tier
+daily token budget in nine minutes.
 
-### Attempt 1, `llama-3.3-70b-versatile` (the `.env.example` default)
+Run three times in total. All three are recorded below, because the first
+two are what made the third interpretable.
 
-`MOCK_LLM=0` in `.env`, stack recreated so the containers picked it up
+### Attempts 1 and 2, on the original key: no budget left to test with
+
+`MOCK_LLM=0` in `.env`, stack recreated so containers picked it up
 (`docker exec aegis-core-worker-1 printenv MOCK_LLM` returned `0`).
 
 ```
-### live e2e retry 2026-08-07T02:39:04Z LLM_LARGE=llama-3.3-70b-versatile
+### live e2e 2026-08-07T02:39:04Z LLM_LARGE=llama-3.3-70b-versatile
 MOCK_LLM=0 .venv/bin/python -m pytest e2e -q
 [...]
-FAILED e2e/test_approvals.py::test_veto_during_the_window_escalates_instead_of_healing
-FAILED e2e/test_checkpoint_resume.py::test_killing_worker_mid_run_resumes_from_checkpoint
-FAILED e2e/test_scenarios.py::test_latency_heals - AssertionError: {'id': 'in...
-FAILED e2e/test_scenarios.py::test_crash_heals - AssertionError: {'id': 'inc_...
-FAILED e2e/test_scenarios.py::test_error_spike_heals - TimeoutError: no incid...
-FAILED e2e/test_scenarios.py::test_memory_leak_heals - AssertionError: {'id':...
-FAILED e2e/test_scenarios.py::test_cache_outage_heals - AssertionError: {'id'...
 7 failed, 8 passed in 494.16s (0:08:14)
 ```
 
-Every failure is the same escalation, and the escalation reason names the
-cause exactly:
+Every failure was the same escalation, and the reason named the cause:
 
 ```
 2026-08-07T02:47:04.983Z  agent:diagnose  agent.run.started   {"model": "llama-3.3-70b-versatile", ...}
@@ -343,60 +345,141 @@ cause exactly:
 2026-08-07T02:47:16.232Z  system:supervisor  incident.escalated {"reason": "agent run crashed: Error code: 429 ...
 ```
 
-The 8 that passed are the ones that never call the large model: the
-approval, signature-rejection, chain-tamper and adversarial cases.
-
-### Attempt 2, `openai/gpt-oss-120b` (the authorised substitute)
-
-Switched `LLM_LARGE`, recreated the stack, re-ran. Same wall, different
-model:
+Switching `LLM_LARGE` to the authorised substitute `openai/gpt-oss-120b`
+hit the same wall on that model's own budget:
 
 ```
 Rate limit reached for model `openai/gpt-oss-120b` in organization `org_01jvf...`
 service tier `on_demand` on tokens per day (TPD): Limit 200000, Used 198702
 ```
 
-### Attempt 3, one scenario on `openai/gpt-oss-20b`
+A single scenario on `openai/gpt-oss-20b` got three real diagnose tool
+calls in before its per-minute budget went too. Nothing about the system
+was tested by any of this: the day's budget had already been spent by
+earlier phase-5 and phase-6 work.
 
-A single test rather than the suite, to see whether any live path could be
-demonstrated at all. It got further, three real diagnose tool calls against
-live telemetry, before the per-minute budget ran out:
+### Attempt 3, fresh key, committed default model
+
+A second Groq key was supplied with an untouched daily budget, confirmed
+before spending anything on it:
 
 ```
-2026-08-07T03:01:00.979Z  agent:diagnose  agent.run.started  {"model": "openai/gpt-oss-20b", ...}
-2026-08-07T03:01:01.583Z  agent:diagnose  agent.step  {"tool": "query_metrics", "service": "target-orders"}
-2026-08-07T03:01:14.349Z  agent:diagnose  agent.step  {"tool": "query_logs", "service": "target-orders"}
-2026-08-07T03:01:27.338Z  agent:diagnose  agent.step  {"tool": "get_container_stats", "service": "redis"}
-2026-08-07T03:02:31.726Z  agent:diagnose  agent.run.failed  {"reason": "... on tokens per minute (TPM):
-  Limit 8000, Used 6818, Requested 1692. Please try again in 3.825s ..."}
+$ curl -sD - .../chat/completions -d '{"model":"llama-3.3-70b-versatile",...}'
+HTTP/2 200
+x-ratelimit-limit-requests: 1000
+x-ratelimit-remaining-requests: 999
+x-ratelimit-limit-tokens: 12000
+x-ratelimit-remaining-tokens: 11958
 ```
 
-`aegis.llm` does retry 429s (`MAX_RATE_LIMIT_RETRIES = 3`, backoff 1s, 2s,
-4s), which covers a 3.8s hint on its own. It did not help here because the
-sibling incidents described in defect 3 were spending the same 8000 TPM
-budget in parallel, so every retry met a fresh 429. That is the same
-rate-limit contention PHASE_2_REPORT.md described, amplified by the number
-of concurrent incidents.
+`LLM_LARGE` back to the committed `llama-3.3-70b-versatile`, all chaos
+scenarios cleared first, stack recreated:
 
-Stopped there rather than working through a chain of further substitute
-models. `.env` was restored to its committed defaults immediately after
-(`MOCK_LLM=1`, `LLM_LARGE=llama-3.3-70b-versatile`), confirmed by diffing
-it against `.env.example`:
+```
+### live e2e, fresh key 2026-08-07T04:06:58Z LLM_LARGE=llama-3.3-70b-versatile
+MOCK_LLM=0 .venv/bin/python -m pytest e2e -q
+[...]
+FAILED e2e/test_approvals.py::test_veto_during_the_window_escalates_instead_of_healing
+FAILED e2e/test_scenarios.py::test_latency_heals - AssertionError: {'id': 'in...
+FAILED e2e/test_scenarios.py::test_error_spike_heals - AssertionError: {'id':...
+FAILED e2e/test_scenarios.py::test_memory_leak_heals - AssertionError: {'id':...
+FAILED e2e/test_scenarios.py::test_cache_outage_heals - AssertionError: {'id'...
+5 failed, 10 passed in 545.64s (0:09:05)
+make: *** [e2e-live] Error 1
+```
+
+10 passed, up from 8. `test_crash_heals` and
+`test_killing_worker_mid_run_resumes_from_checkpoint` both pass against
+live model calls, so checkpoint resume is now verified live as well as on
+fixtures.
+
+### Live MTTR actually measured
+
+Eleven incidents resolved during the run. The five real ones (the six
+`synthetic` rows are the seeded red-tier approvals, not chaos scenarios):
+
+| Rule                            | MTTR | Autonomy |
+| ------------------------------- | ---- | -------- |
+| latency_p95 on target-orders    | 93s  | auto     |
+| latency_p95 on target-orders    | 35s  | auto     |
+| latency_p95 on target-gateway   | 32s  | auto     |
+| service_down on target-payments | 47s  | auto     |
+| service_down on target-payments | 42s  | auto     |
+
+Against the README's live table: latency is claimed at 92s and measured
+93s here, inside 2%. The `service_down` rows measured 47s and 42s against
+a claimed 61s for crash, faster than claimed and outside the 20% band on
+the fast side; note `service_down` fires for both crash and memory_leak
+(PHASE_2_REPORT.md, Open questions), so those two rows cannot be
+attributed to one scenario with confidence. `error_spike` and
+`cache_outage` produced no resolved sample, so their README numbers remain
+unchecked by this pass.
+
+### Why the suite still does not finish, measured
+
+The failure is not the model and not the code. It is volume. Counting
+every incident opened inside the 9m05s window:
+
+```
+incidents opened during the 9m05s live run: 60
+   19  ('error_rate', ('target-gateway',), 'escalated')
+   16  ('error_rate', ('target-payments',), 'escalated')
+    6  ('synthetic', (), 'resolved')
+    5  ('latency_p95', ('target-gateway',), 'escalated')
+    5  ('latency_p95', ('target-orders',), 'escalated')
+    2  ('error_rate', ('target-orders',), 'escalated')
+    2  ('service_down', ('target-payments',), 'escalated')
+    2  ('latency_p95', ('target-orders',), 'resolved')
+    2  ('service_down', ('target-payments',), 'resolved')
+    1  ('latency_p95', ('target-gateway',), 'resolved')
+
+agent runs: 157, tokens_in 127325, tokens_out 7744, total 135069, cost $0.0555
+```
+
+Split by outcome:
+
+```
+escalated   49 incidents   106738 tokens  79%
+resolved    11 incidents    28331 tokens  21%
+total       60 incidents   135069 tokens
+```
+
+The suite needs five scenarios healed. It opened 60 incidents and spent
+135,069 tokens against a 100,000 daily limit, and **79% of that went to 49
+incidents that escalated**, nearly all of them defect 3's five-second
+re-opens. The eleven incidents that actually resolved cost 28,331 tokens,
+comfortably inside the free-tier day.
+
+The exhaustion message, from the first incident to hit it:
+
+```
+Rate limit reached for model `llama-3.3-70b-versatile` in organization
+`org_01kw5e8rn2ejd8b7mt7hfr6rs0` service tier `on_demand` on tokens per day (TPD):
+Limit 100000, Used 98997, Requested 1386. Please try again in 5m30.912s.
+```
+
+So the honest reading is not "the free tier is too small for this demo".
+It is that the storm multiplies the demo's real cost by roughly five, and
+that is what puts it over the line. Fixing defect 3 is very likely enough
+to make `make e2e-live` pass on a free-tier key; that is a prediction from
+these numbers, not something this pass verified.
+
+### What is still unverified
+
+`error_spike` and `cache_outage` never produced a live resolution, so two
+of the README's five measured rows are unchecked. A clean full-suite live
+run needs either a paid tier or defect 3 fixed first. `.env` was restored
+to `MOCK_LLM=1` with the committed default model immediately afterward,
+verified by diffing against `.env.example`:
 
 ```
 $ diff <(redact .env) <(redact .env.example)
 identical apart from redacted secrets
 ```
 
-`.env` is gitignored (`.gitignore:1`) and was never staged.
-
-**What this means for the release.** plan/07 asks for live MTTR within 20%
-of the README's claims. That comparison could not be made today. The
-README's live numbers come from PHASE_6_REPORT.md, which documents the same
-quota wall being hit four times during collection, so this is a known and
-already-disclosed constraint of a free-tier key, not a new finding. It does
-mean the live path is unverified by this pass and someone should re-run
-`make e2e-live` on a fresh daily budget before the tag moves.
+`.env` is gitignored (`.gitignore:1`) and was never staged. The supplied
+key is left in the local `.env` only, since the original key is spent; the
+original file is backed up outside the repo.
 
 ## 4. Red tier park, worker restart, resume
 
@@ -788,14 +871,19 @@ clean; the fixture e2e run in section 2 was 15/15.
 
 ## Verdict
 
-Not clean. Five of the six runtime checks pass; one could not be run, and
-seven defects came out of the pass, of which four are fixed and three are
-left for a decision that is not a verifier's to make.
+Not clean. Five of the six runtime checks pass, one is partially verified,
+and seven defects came out of the pass, of which four are fixed and three
+are left for a decision that is not a verifier's to make.
 
 plan/07 says "the release tag moves only when this list is clean", so no
-tag was moved, nothing was pushed, and nothing was published. Defect 5 in
-particular should be settled before launch: it breaks the human-oversight
-story the README leads with.
+tag was moved, nothing was pushed, and nothing was published.
+
+Two things should be settled before launch. Defect 5 breaks the
+human-oversight story the README leads with: refresh the page and a parked
+red-tier approval becomes unapprovable from the UI. Defect 3 is what keeps
+`make e2e-live` from finishing, and the live run put a number on it,
+79% of a daily token budget spent on incidents that were never going to
+heal.
 
 ### Check results
 
@@ -803,22 +891,22 @@ story the README leads with.
 | -------------------------------------------------------------- | ---------------------------------------------------- |
 | 1. Stranger test (clean clone, README only)                    | pass, 44.4s to a healthy stack, 53.2s inject to heal |
 | 2. Fixture e2e from the clean clone                            | pass, 15/15 in 10m02s, after fixing defect 2         |
-| 3. Live e2e (`MOCK_LLM=0`)                                     | **not verifiable**, Groq daily quota exhausted       |
+| 3. Live e2e (`MOCK_LLM=0`)                                     | **partial**, 10/15 on a fresh key, 5 live heals      |
 | 4. Red tier park, restart, resume                              | pass                                                 |
 | 5. UI walkthrough (3D, 2D, reduced motion, keyboard, recorder) | pass, after fixing defect 4                          |
 | 6. Evidence pack (auto and approved)                           | pass, after fixing defect 7                          |
 
 ### Defects found
 
-| #   | Severity | What                                                                                                                                      | Status |
-| --- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| 5   | high     | A parked red-tier approval is invisible after a page reload; no approve control exists outside the live-only overlay                      | open   |
-| 2   | medium   | A clean clone could not run `make e2e`; `make venv` never installed `apps/core`, and CI hid it with a private step                        | fixed  |
-| 3   | medium   | Collateral gateway incidents re-open every 5s while a fault is active (47 in one 10-minute suite), flooding the feed and the token budget | open   |
-| 4   | medium   | `?view=2d` was dropped by the chaos panel's push and by the nav links                                                                     | fixed  |
-| 1   | low      | README named an **inject: latency** button that does not exist on the chaos screen                                                        | fixed  |
-| 6   | low      | The 3D scene forced on with `?view=3d` ignores prefers-reduced-motion                                                                     | open   |
-| 7   | low      | `&mdash;` in the evidence-pack source rendered a real em dash into every PDF, invisible to the repo-wide grep                             | fixed  |
+| #   | Severity | What                                                                                                                                                                               | Status |
+| --- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| 5   | high     | A parked red-tier approval is invisible after a page reload; no approve control exists outside the live-only overlay                                                               | open   |
+| 3   | high     | Incidents re-open every 5s while a fault is active (60 in one 9-minute live run); 79% of the daily token budget goes to escalating duplicates, which is what stops `make e2e-live` | open   |
+| 2   | medium   | A clean clone could not run `make e2e`; `make venv` never installed `apps/core`, and CI hid it with a private step                                                                 | fixed  |
+| 4   | medium   | `?view=2d` was dropped by the chaos panel's push and by the nav links                                                                                                              | fixed  |
+| 1   | low      | README named an **inject: latency** button that does not exist on the chaos screen                                                                                                 | fixed  |
+| 6   | low      | The 3D scene forced on with `?view=3d` ignores prefers-reduced-motion                                                                                                              | open   |
+| 7   | low      | `&mdash;` in the evidence-pack source rendered a real em dash into every PDF, invisible to the repo-wide grep                                                                      | fixed  |
 
 ### Fixes committed
 
@@ -847,19 +935,27 @@ the same provisioning a clean clone gets. `18677df` adds three cases to
   "while an incident is open", so re-opening after an escalation is what
   the spec asks for. An escalation cooldown, or scoping the gateway rules
   so a downstream failure does not fire them, changes specified behaviour.
-  Worth deciding before a demo: it is what put 50 escalated rows in the
-  feed screenshot and dragged the metrics strip to `autonomy (auto) 22%`.
+  This is the one to fix first. It put 50 escalated rows in the feed
+  screenshot, dragged the metrics strip to `autonomy (auto) 22%`, and
+  spent 79% of a free-tier daily token budget in nine minutes. The eleven
+  incidents that actually resolved in that run cost 28,331 tokens against
+  a 100,000 limit, so fixing it is very likely enough to make
+  `make e2e-live` pass on a free key. Worth an e2e test that counts
+  incidents opened per injected fault.
 - **Defect 6 (3D scene under reduced motion).** Only reachable by
   explicitly asking for 3D, so honouring the preference anyway is a
   judgement call for the spec.
 
 ### Not verified
 
-- **Live LLM behaviour of any kind.** `llama-3.3-70b-versatile` (TPD limit 100000) and `openai/gpt-oss-120b` (TPD limit 200000) were both spent
-  before this pass ran; `openai/gpt-oss-20b` got three diagnose tool calls
-  in before its per-minute budget went too. No live MTTR number was
-  produced, so the README's measured table could not be checked against the
-  20% band plan/07 asks for. Re-run `make e2e-live` on a fresh daily budget.
+- **A full clean `make e2e-live`.** The best run was 10/15 on a fresh key,
+  with five real live heals. `error_spike` and `cache_outage` produced no
+  resolved sample, so two of the README's five measured rows stay
+  unchecked. `latency` measured 93s against a claimed 92s; the
+  `service_down` rows measured 47s and 42s against a claimed 61s for
+  crash, outside the 20% band on the fast side and not cleanly attributable
+  because `service_down` covers both crash and memory_leak. Re-run after
+  defect 3 is fixed, or on a paid tier.
 - **A cold Docker image build.** Every layer in the stranger test logged
   `CACHED`, because this machine had built the images before. The README
   only claims a warm-cache number, which held at 44.4s, but a first-ever
@@ -893,9 +989,11 @@ the evidence: the failure was in the report's own markdown, not in the code.
 
 ## State this pass left behind
 
-- Branch `phase-6`, five fix commits plus this report. Nothing pushed, no
+- Branch `phase-6`, four fix commits plus this report. Nothing pushed, no
   remote touched, no tag created or moved. `phase-6` still points where it
   did.
-- `.env` restored to its committed defaults and never staged.
+- `.env` restored to `MOCK_LLM=1` and the committed default model, and
+  never staged. It holds the second Groq key, since the first is spent for
+  the day; the original file is backed up outside the repo.
 - The stack is up in fixture mode (`MOCK_LLM=1`). `make down` clears it,
   including the incident rows this pass generated.
