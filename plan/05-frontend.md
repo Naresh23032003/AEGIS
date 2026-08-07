@@ -61,7 +61,7 @@ Command palette (cmdk, global): jump to incident, inject scenario, toggle 2D/3D,
 
 The center of the ops console. Keep it deliberate and dark, not busy.
 
-- Nodes: target services + shop-db + redis as instanced rounded-box meshes laid out on a fixed grid over a subtle line grid floor. Labels as drei Html, mono font.
+- Nodes: target services + shop-db + shop-redis as instanced rounded-box meshes laid out on a fixed grid over a subtle line grid floor. Labels as drei Html, mono font.
 - Edges: lines with a slow animated pulse traveling in the traffic direction (custom shader or drei Line with dash offset animation). Pulse rate scales with request rate bucket (low/med/high from metrics, not per-request).
 - Health: node emissive color = status (cyan healthy, amber degraded, red faulted, green just-verified with a 3s hold).
 - Agents: small glowing orbs (one per active agent) that lerp from an "AEGIS core" position to the faulted node while that agent runs, orbit it while working, return on completion. Max 4 orbs; this is choreography, not simulation.

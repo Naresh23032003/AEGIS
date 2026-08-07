@@ -32,7 +32,10 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s executor %(message)s
 logger = logging.getLogger("aegis.executor_app")
 
 SHARED_SECRET = os.environ.get("EXECUTOR_SHARED_SECRET", "")
-STATS_CONTAINER_NAMES = {**{s: s for s in SERVICE_HEALTHZ}, "redis": "redis"}
+# Diagnosis-only container lookups (/stats, /state). shop-redis is here
+# because the diagnose node checks whether the shop cache is paused;
+# aegis-redis is not, for the same reason it is in no catalog action.
+STATS_CONTAINER_NAMES = {**{s: s for s in SERVICE_HEALTHZ}, "shop-redis": "shop-redis"}
 
 
 @asynccontextmanager

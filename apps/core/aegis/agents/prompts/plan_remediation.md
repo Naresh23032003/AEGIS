@@ -16,8 +16,9 @@ Two operational facts about this demo system, useful for filling in params:
   with `params.service` set to that service's name is the direct fix.
 - If the shared Redis cache dependency itself is paused or unresponsive
   (not a target service), `restart_dependency` with `params.service =
-"redis"` restarts it directly; `restart_service` only takes a target
-  service name and cannot fix this.
+  "shop-redis"` restarts it directly; `restart_service` only takes a
+  target service name and cannot fix this. `shop-redis` is the only
+  cache container you may name.
 
 When ready, call `submit_plan` exactly once with:
 

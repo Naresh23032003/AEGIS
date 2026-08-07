@@ -80,13 +80,13 @@ The LLM client (OpenAI SDK pointed at https://api.groq.com/openai/v1, auth via G
 | restart_service | green | docker restart of one target container | none needed |
 | clear_cache | green | FLUSHDB on shop cache keyspace | none |
 | remove_toxic | green | delete a named Toxiproxy toxic | re-add (test only) |
-| restart_dependency | yellow | restart redis or toxiproxy container | none |
+| restart_dependency | yellow | restart the shop-redis or toxiproxy container | none |
 | scale_service | yellow | compose scale target service 1 -> 2 | scale back to 1 |
 | rollback_config | yellow | restore last good config file for a target service + restart | re-apply previous |
 | flush_queue | red | destructive: purge orders retry queue | none (irreversible) |
 | restart_database | red | restart shop-db | none |
 
-Params schemas per key live next to the catalog. `service` params are validated against the fixed list of target services.
+Params schemas per key live next to the catalog. `service` params are validated against the fixed list of target services. `restart_dependency` is the one exception, taking a dependency container instead: `shop-redis` or `toxiproxy`. `aegis-redis`, the event stream, is in no action's params, and the executor rejects any container outside the demo set before the call reaches Docker (plan/01-architecture.md, Runtime topology).
 
 ## Risk tiers
 
@@ -127,6 +127,6 @@ The worker calls OPA over HTTP for every proposal and emits action.policy_checke
 | crash | docker stop target-payments | payments down | restart_service (green) |
 | error_spike | payments flag makes 50% of requests 500 | bad config/flag on payments | rollback_config (yellow) |
 | memory_leak | payments endpoint allocates until container OOMs | memory growth then crash loop | restart_service + note in summary |
-| cache_outage | pause redis container | cache dependency down, latency spike | restart_dependency (yellow) |
+| cache_outage | pause shop-redis container | cache dependency down, latency spike | restart_dependency (yellow) |
 
 Each scenario has an e2e test asserting: incident detected within 30s of injection, resolved with expected autonomy level, MTTR under 90s (fixtures) or 150s (live LLM), hash chain valid, expected catalog_key executed. These five tests are the project's definition of working.

@@ -28,7 +28,7 @@ const POSITIONS: Record<string, { x: number; y: number }> = {
   "target-orders": { x: 100, y: 190 },
   "target-payments": { x: 420, y: 190 },
   "shop-db": { x: 20, y: 360 },
-  redis: { x: 240, y: 360 },
+  "shop-redis": { x: 240, y: 360 },
 };
 
 function AegisNode({ data }: NodeProps) {

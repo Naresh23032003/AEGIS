@@ -51,8 +51,8 @@ RULE_TO_SCENARIO = {
     #   - service_down fires for both crash and memory_leak on
     #     target-payments (PHASE_2_REPORT.md, Open questions).
     #   - latency_p95 fires for both latency (toxiproxy DB latency) and
-    #     cache_outage (a paused redis makes every cache read/write hang)
-    #     on target-orders.
+    #     cache_outage (a paused shop-redis makes every cache read/write
+    #     hang) on target-orders.
     # resolve_scenario_hint below breaks both ties with a live container
     # check before this table is consulted; the entries here are only the
     # fallback once that check has ruled the ambiguous alternative out (or
@@ -87,7 +87,7 @@ async def resolve_scenario_hint(*, source_rule: str, affected_services: list[str
         return "memory_leak" if payments_state.get("oom_killed") else None
     if source_rule == "latency_p95" and first_service == _LATENCY_AMBIGUOUS_SERVICE:
         try:
-            redis_state = await executor_client.container_state("redis")
+            redis_state = await executor_client.container_state("shop-redis")
         except executor_client.ExecutorError:
             return None
         return "cache_outage" if redis_state.get("status") == "paused" else None

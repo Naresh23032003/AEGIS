@@ -70,7 +70,8 @@ apps/core is one Python project with three entrypoints so imports stay shared:
 | target-payments | apps/target/payments | internal 9002 | fault endpoints |
 | shop-db | postgres:16 | internal 5432 | demo data |
 | aegis-db | postgres:16 | internal 5433 | incidents, events, checkpoints |
-| redis | redis:7 | internal 6379 | streams + shop cache |
+| shop-redis | redis:7 | internal 6379 | demo shop cache only; the only Redis any catalog action may touch |
+| aegis-redis | redis:7 | internal 6379 | AEGIS event stream; never in the action catalog, unreachable by agents |
 | opa | openpolicyagent/opa | internal 8181 | loaded with packages/policies |
 | toxiproxy | ghcr.io/shopify/toxiproxy | internal 8474 | proxies orders -> shop-db |
 | lgtm | grafana/otel-lgtm | 3001 (Grafana) | OTLP 4317/4318 |
@@ -80,17 +81,17 @@ Data flow for one incident:
 
 1. loadgen sends traffic; all target services export OTel traces, metrics, logs to lgtm.
 2. core-worker probes target health endpoints and queries Prometheus (inside lgtm) every 5 seconds. Rule-based anomaly detection fires (see plan/03).
-3. Worker opens an incident row, appends incident.detected to the Postgres event log (hash chained), publishes it on Redis stream `aegis:events`.
+3. Worker opens an incident row, appends incident.detected to the Postgres event log (hash chained), publishes it on aegis-redis stream `aegis:events`.
 4. Worker starts a LangGraph run: triage -> diagnose -> plan -> act -> verify, with loop back to diagnose (max 3 loops).
 5. Every proposed action goes to OPA. Green tier executes via core-executor. Yellow tier opens a 30 second veto window. Red tier blocks on a signed approval from the console.
 6. Verification re-probes for up to 60 seconds. Pass closes the incident with MTTR recorded. Fail triggers rollback and another loop, then human escalation.
-7. core-api tails the Redis stream and fans out every event to console WebSocket clients. The console renders the whole battle live and can replay it later from the Postgres event log.
+7. core-api tails the aegis-redis stream and fans out every event to console WebSocket clients. The console renders the whole battle live and can replay it later from the Postgres event log.
 
 ## ADR summaries (write full ADRs in phase 0)
 
 - ADR-001: LangGraph Postgres checkpoints instead of Temporal. Durability at demo scale without a second orchestrator. Temporal noted as the production path.
 - ADR-002: Executor allowlist + hardened containers instead of gVisor. gVisor is Linux-only and would break the one-command demo on macOS.
-- ADR-003: Redis Streams instead of Kafka/NATS. One container, consumer groups are enough at this scale.
+- ADR-003: Redis Streams instead of Kafka/NATS. One container for the bus (aegis-redis, separate from the shop cache), consumer groups are enough at this scale.
 - ADR-004: Rule-based detection, LLM diagnosis. Detection must be deterministic and cheap; reasoning is where the LLM earns its cost.
 - ADR-005: Closed action catalog. Agents choose from typed, pre-audited actions. Free-form shell is never possible, even if the model asks.
 - ADR-006: Browser-held Ed25519 keys for approvals. The server verifies but cannot forge an approval.

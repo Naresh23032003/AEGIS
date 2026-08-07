@@ -40,10 +40,10 @@ flowchart LR
     executor --> ord
     executor --> pay
     executor --> shopdb
-    executor -->|restart/scale| redis[(redis)]
+    executor -->|restart/scale| shopredis[(shop-redis)]
 
     worker -->|hash-chained events| aegisdb[(aegis-db)]
-    worker -->|publish| stream["redis stream\naegis:events"]
+    worker -->|publish| stream["aegis-redis stream\naegis:events"]
     api -->|read| aegisdb
     stream --> api
     api <-->|WS + REST| console["console\n(Next.js, R3F/React Flow)"]

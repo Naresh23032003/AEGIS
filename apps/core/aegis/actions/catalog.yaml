@@ -35,10 +35,14 @@ actions:
 
   restart_dependency:
     tier: yellow
-    effect: "restart redis or toxiproxy container"
+    effect: "restart the shop cache or the Toxiproxy container"
     rollback_key: null
     params:
-      service: { type: string, enum: [redis, toxiproxy] }
+      # shop-redis, not aegis-redis: the event stream is deliberately absent
+      # from this enum and from every other action's params, so no agent can
+      # restart the bus its own incident is being reported on
+      # (plan/01-architecture.md, Runtime topology).
+      service: { type: string, enum: [shop-redis, toxiproxy] }
 
   scale_service:
     tier: yellow

@@ -2,7 +2,7 @@
   "calls": [
     {
       "arguments": {
-        "service": "redis"
+        "service": "shop-redis"
       },
       "name": "get_container_stats"
     }
