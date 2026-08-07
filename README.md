@@ -46,9 +46,10 @@ make up
 Requires Docker and Python 3.12. `make up` provisions its own `.venv` and
 npm workspace deps on first run, builds the stack, and brings every
 container up healthy, typically inside 2 minutes on a warm build cache.
-Open <http://localhost:3000>, go to **chaos**, click **inject: latency**,
-watch the topology react and the incident resolve on the **console**
-screen. `make down` tears it down.
+Open <http://localhost:3000>, go to **chaos**, and press **inject fault**
+on the **latency** card. The console screen takes over from there: the
+topology reacts, an incident card appears once detection fires (about 50s,
+the PromQL window), and it resolves on its own. `make down` tears it down.
 
 Live LLM path (real Groq calls, needs a free API key from
 [console.groq.com](https://console.groq.com)):
