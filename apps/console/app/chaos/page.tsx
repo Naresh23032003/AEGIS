@@ -140,8 +140,8 @@ export default function ChaosPanel() {
 
       <p className="font-mono-data text-[11px]" style={{ color: "var(--aegis-text-secondary)" }}>
         safety: injections only touch the demo target stack (target-gateway, target-orders,
-        target-payments, shop-db, shop-redis, toxiproxy). Nothing outside deploy/docker-compose.yml is
-        ever reachable from here.
+        target-payments, shop-db, shop-redis, toxiproxy). Nothing outside deploy/docker-compose.yml
+        is ever reachable from here.
       </p>
     </div>
   );

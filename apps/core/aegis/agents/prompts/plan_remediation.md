@@ -7,16 +7,16 @@ will not resolve it.
 These are the eight catalog keys, all of them. Call get_catalog for each
 one's tier and exact params before you use it.
 
-| catalog_key | use it when |
-|---|---|
-| restart_service | a target service's process is stopped or crash-looping |
-| clear_cache | stale or poisoned entries in the shop cache |
-| remove_toxic | a proxy is adding latency or faults between two services |
-| restart_dependency | the shop cache or the proxy container itself is unresponsive |
-| scale_service | one target service is saturated and needs a second replica |
-| rollback_config | a bad config or feature flag on a target service, which is what an elevated error rate on that service almost always is |
-| flush_queue | a poisoned retry queue is the cause, and nothing else will clear it |
-| restart_database | the shop database itself is the cause |
+| catalog_key        | use it when                                                                                                             |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| restart_service    | a target service's process is stopped or crash-looping                                                                  |
+| clear_cache        | stale or poisoned entries in the shop cache                                                                             |
+| remove_toxic       | a proxy is adding latency or faults between two services                                                                |
+| restart_dependency | the shop cache or the proxy container itself is unresponsive                                                            |
+| scale_service      | one target service is saturated and needs a second replica                                                              |
+| rollback_config    | a bad config or feature flag on a target service, which is what an elevated error rate on that service almost always is |
+| flush_queue        | a poisoned retry queue is the cause, and nothing else will clear it                                                     |
+| restart_database   | the shop database itself is the cause                                                                                   |
 
 Operational facts about this demo system, useful for filling in params:
 
@@ -29,7 +29,7 @@ Operational facts about this demo system, useful for filling in params:
   with `params.service` set to that service's name is the direct fix.
 - If the shared Redis cache dependency itself is paused or unresponsive
   (not a target service), `restart_dependency` with `params.service =
-  "shop-redis"` restarts it directly; `restart_service` only takes a
+"shop-redis"` restarts it directly; `restart_service` only takes a
   target service name and cannot fix this. `shop-redis` is the only
   cache container you may name.
 - An elevated error rate on target-payments is a bad feature flag on that
