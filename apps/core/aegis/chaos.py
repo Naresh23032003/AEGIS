@@ -136,6 +136,90 @@ async def _clear_cache_outage() -> dict[str, Any]:
     return {"scenario": "cache_outage", **result}
 
 
+def base_scenario(scenario_key: str | None) -> str | None:
+    """Strip aegis.agents.state.fixture_scenario_key's service qualifier back
+    to a bare scenario name ("latency_target-orders" -> "latency"). Returns
+    None for a key that is not one of the five (the synthetic keys the seed
+    scripts use, for instance), which is the caller's cue that there is no
+    injected fault to ask about."""
+    if not scenario_key:
+        return None
+    for name in SCENARIOS:
+        if scenario_key == name or scenario_key.startswith(f"{name}_"):
+            return name
+    return None
+
+
+async def _fault_flags() -> dict[str, Any] | None:
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        try:
+            resp = await client.get(f"{PAYMENTS_URL}/internal/fault")
+            resp.raise_for_status()
+        except httpx.HTTPError:
+            return None
+        flags: dict[str, Any] = resp.json()
+        return flags
+
+
+async def _container_status(name: str) -> str | None:
+    try:
+        state = await executor_client.container_state(name)
+    except executor_client.ExecutorError:
+        return None
+    status: str | None = state.get("status")
+    return status
+
+
+async def status(scenario: str) -> bool | None:
+    """Is this scenario's injected fault present right now?
+
+    True/False when the chaos API can tell, None when it cannot (the
+    executor or the target is unreachable, so "no fault" and "no answer"
+    stay distinguishable). Read-only, and deliberately the same checks the
+    inject/clear pair above manipulates rather than a health probe: the
+    question is whether the specific injected fault is still in place, not
+    whether the system looks well.
+
+    Test-only signal. The verify node records it (aegis.agents.nodes.verify)
+    and the e2e suite asserts on it; no agent ever receives it as input.
+    """
+    if scenario not in SCENARIOS:
+        raise UnknownScenario(scenario)
+
+    if scenario == "latency":
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            try:
+                resp = await client.get(
+                    f"{TOXIPROXY_URL}/proxies/shopdb/toxics/{LATENCY_TOXIC_NAME}"
+                )
+            except httpx.HTTPError:
+                return None
+        if resp.status_code == 404:
+            return False
+        return True if resp.status_code == 200 else None
+
+    if scenario == "cache_outage":
+        shop_redis = await _container_status("shop-redis")
+        return None if shop_redis is None else shop_redis == "paused"
+
+    if scenario == "crash":
+        payments = await _container_status("target-payments")
+        return None if payments is None else payments != "running"
+
+    if scenario == "error_spike":
+        flags = await _fault_flags()
+        return None if flags is None else bool(flags.get("error_spike_enabled"))
+
+    # memory_leak: the flag lives in the process, so an OOM kill clears it by
+    # taking the process with it. A stopped container is the fault still
+    # doing its work, not the fault being gone.
+    payments = await _container_status("target-payments")
+    if payments is not None and payments != "running":
+        return True
+    flags = await _fault_flags()
+    return None if flags is None else bool(flags.get("memory_leak_enabled"))
+
+
 async def inject(scenario: str) -> dict[str, Any]:
     if scenario not in SCENARIOS:
         raise UnknownScenario(scenario)

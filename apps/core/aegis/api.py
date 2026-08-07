@@ -183,6 +183,23 @@ async def get_incident_events(incident_id: str) -> list[dict[str, Any]]:
     return [_row_to_envelope(row) for row in rows]
 
 
+@app.get("/api/chaos/{scenario}")
+async def chaos_status(scenario: str) -> dict[str, Any]:
+    """Whether this scenario's injected fault is present right now.
+
+    fault_present is null when the chaos API cannot tell (executor or target
+    unreachable), so "no fault" and "no answer" never collapse into each
+    other. Emits nothing: reading the state of a fault is not an event.
+
+    Added in phase 9 for the e2e suite, which asserts that a healed incident
+    also left the fault gone rather than trusting one catalog_key to have
+    been the right answer. No agent path reads this route.
+    """
+    if scenario not in chaos.SCENARIOS:
+        raise HTTPException(status_code=404, detail=f"unknown scenario {scenario}")
+    return {"scenario": scenario, "fault_present": await chaos.status(scenario)}
+
+
 @app.post("/api/chaos/{scenario}")
 @limiter.limit("10/minute")
 async def inject_chaos(scenario: str, request: Request, response: Response) -> dict[str, Any]:

@@ -99,6 +99,20 @@ async def charge(req: ChargeRequest, response: Response) -> dict:
     return {"status": "ok", "payment_id": payment_id, "order_id": req.order_id}
 
 
+@app.get("/internal/fault")
+async def fault_state() -> dict:
+    """Read side of the two toggles below. The chaos API uses it to answer
+    whether an injected fault is still present at verification time, which
+    is what stops a "verify passed" from being taken on trust while the
+    fault that opened the incident is still in place (phase 9). Nothing in
+    the agent path reads this; it is not evidence, it is a test signal."""
+    return {
+        "error_spike_enabled": error_spike_enabled,
+        "memory_leak_enabled": _leak_task is not None,
+        "blocks": len(_leak_blocks),
+    }
+
+
 @app.post("/internal/fault/error-spike")
 async def set_error_spike(req: FaultToggle) -> dict:
     global error_spike_enabled
