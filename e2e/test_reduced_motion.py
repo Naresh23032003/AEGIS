@@ -19,7 +19,7 @@ from typing import Any
 
 import httpx
 
-from e2e.conftest import CONSOLE_URL, VIEWPORT
+from e2e.conftest import CONSOLE_URL, VIEWPORT, wait_for_no_open_incidents
 
 IDLE_GAP_SECONDS = 4
 SETTLE_SECONDS = 3
@@ -62,6 +62,11 @@ def _assert_default_renderer_is_2d(browser: Any) -> None:
 def test_forced_3d_holds_still_under_reduced_motion(client: httpx.Client, browser: Any) -> None:
     for scenario in ("latency", "crash", "error_spike", "memory_leak", "cache_outage"):
         client.delete(f"/api/chaos/{scenario}")
+    # An incident mid-run repaints the scene legitimately (node colours,
+    # agent orbs, the camera framing the fault), so "identical pixels" only
+    # means anything once nothing is running.
+    still_open = wait_for_no_open_incidents(client)
+    assert not still_open, f"topology is still changing, incidents in flight: {still_open}"
 
     _assert_default_renderer_is_2d(browser)
 
