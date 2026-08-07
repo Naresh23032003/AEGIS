@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""python scripts/collect_live_numbers.py
+"""python scripts/collect_live_numbers.py [out_path] [--scenarios a,b]
 
 Runs each of the five chaos scenarios three times against a live stack
 with the real LLM (the long-running core-worker, not a one-off container:
@@ -13,12 +13,17 @@ output.
 Storm handling for cache_outage/error_spike (continuous faults that
 re-trigger detection on every incident's resolution until cleared) copied
 from scripts/record_fixtures.py, same reasoning documented there.
+
+--scenarios narrows the run to a subset, for topping up one row of the
+README table without spending a free-tier daily budget on the four rows
+that already have three samples (phase 7 re-collected error_spike and
+cache_outage this way).
 """
 
 from __future__ import annotations
 
+import argparse
 import json
-import sys
 import time
 import urllib.request
 from datetime import datetime
@@ -105,8 +110,21 @@ def run_once(scenario: str) -> dict[str, Any]:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("out_path", nargs="?", default="docs/reports/live_run_results.json")
+    parser.add_argument(
+        "--scenarios",
+        default=",".join(SCENARIOS),
+        help=f"comma-separated subset of {','.join(SCENARIOS)}",
+    )
+    args = parser.parse_args()
+    selected = [s.strip() for s in args.scenarios.split(",") if s.strip()]
+    unknown = [s for s in selected if s not in SCENARIOS]
+    if unknown:
+        parser.error(f"unknown scenario(s): {', '.join(unknown)}")
+
     results: list[dict[str, Any]] = []
-    for scenario in SCENARIOS:
+    for scenario in selected:
         for run_n in range(1, RUNS_PER_SCENARIO + 1):
             print(f"=== {scenario} run {run_n}/{RUNS_PER_SCENARIO} ===")
             try:
@@ -126,8 +144,7 @@ def main() -> None:
             results.append(result)
             time.sleep(COOLDOWN_SECONDS)
 
-    default_out = Path("docs/reports/live_run_results.json")
-    out_path = Path(sys.argv[1]) if len(sys.argv) > 1 else default_out
+    out_path = Path(args.out_path)
     out_path.write_text(json.dumps(results, indent=2))
     print(f"\nwrote {out_path}")
 
