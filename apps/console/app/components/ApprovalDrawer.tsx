@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, ShieldAlert, X } from "lucide-react";
 
@@ -16,12 +16,53 @@ import type { ActionView } from "../lib/fold";
  * (only verify.passed/failed do, after the fact); action.approval_requested
  * only has {action_id, diff, reasoning}, so this drawer shows the diff and
  * reasoning it actually has rather than fabricating an evidence list. See
- * docs/reports/PHASE_4_REPORT.md, Deviations. */
+ * docs/reports/PHASE_4_REPORT.md, Deviations.
+ *
+ * Focus, per plan/05's data-layer rules: the drawer takes initial focus on
+ * mount and traps focus while it is open. Before that it was an
+ * alertdialog sitting at the end of the tab order behind the whole
+ * incident feed, which the final verification pass reached only after 59
+ * Tab presses (defect 5's second half, docs/reports/FINAL_VERIFICATION.md).
+ * Focus lands on the drawer itself rather than on approve, so the reading
+ * order starts at the diff and one Tab reaches the first control; putting
+ * it straight on approve would make a stray Enter execute a red-tier
+ * action. */
+const FOCUSABLE =
+  'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 export function ApprovalDrawer({ incidentId, action }: { incidentId: string; action: ActionView }) {
   const reducedMotion = useReducedMotion();
   const [submitting, setSubmitting] = useState<"approve" | "reject" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [decided, setDecided] = useState<{ decision: string; fingerprint: string } | null>(null);
+  const drawerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const restoreTo = document.activeElement as HTMLElement | null;
+    drawerRef.current?.focus();
+    return () => restoreTo?.focus?.();
+  }, []);
+
+  const trapFocus = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Tab") return;
+    const root = drawerRef.current;
+    if (!root) return;
+    const items = Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE));
+    const first = items[0];
+    const last = items[items.length - 1];
+    if (first === undefined || last === undefined) {
+      event.preventDefault(); // nothing left to move to, e.g. after deciding
+      return;
+    }
+    const active = document.activeElement;
+    if (event.shiftKey && (active === first || active === root)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }, []);
 
   async function decide(decision: "approve" | "reject") {
     setSubmitting(decision);
@@ -40,9 +81,13 @@ export function ApprovalDrawer({ incidentId, action }: { incidentId: string; act
   return (
     <AnimatePresence>
       <motion.div
+        ref={drawerRef}
         role="alertdialog"
+        aria-modal="true"
         aria-label="Red tier action awaiting approval"
         data-testid="approval-drawer"
+        tabIndex={-1}
+        onKeyDown={trapFocus}
         initial={reducedMotion ? false : { opacity: 0, x: 60 }}
         animate={{ opacity: 1, x: 0 }}
         exit={reducedMotion ? { opacity: 0 } : { opacity: 0, x: 60 }}
