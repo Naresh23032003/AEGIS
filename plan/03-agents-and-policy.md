@@ -19,7 +19,7 @@ rules:
     fail_count: 3
 ```
 
-A firing rule opens at most one incident per (rule, service) pair; dedupe while an incident is open. Detection also closes the loop for verification (same probes).
+A firing rule opens at most one incident per (rule, service) pair per continuous firing episode: once an incident exists for the pair, no new one may open (regardless of the incident's status, including escalated) until the rule has evaluated clean at least once since that incident was created. A fresh firing after a clean poll is a new episode and opens a new incident. Detection also closes the loop for verification (same probes). (Amended after final verification: the earlier "dedupe while an incident is open" wording allowed escalated incidents to re-open every poll, defect 3 in docs/reports/FINAL_VERIFICATION.md.)
 
 ## Agent graph (LangGraph StateGraph, one durable run per incident)
 
