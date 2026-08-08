@@ -6,7 +6,7 @@
           "target-orders"
         ],
         "severity": "sev2",
-        "summary": "p95 latency on target-orders is 5671.874999999995 ms, exceeding the threshold of 1000.0 ms."
+        "summary": "p95 latency on target-orders is 4800.0 seconds, exceeding the threshold of 1000.0 seconds."
       },
       "name": "submit_triage"
     }

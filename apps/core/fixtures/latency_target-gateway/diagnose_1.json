@@ -2,12 +2,9 @@
   "calls": [
     {
       "arguments": {
-        "confidence": 0.8,
-        "evidence_refs": [
-          "query_metrics(target-gateway)",
-          "query_logs(target-gateway)"
-        ],
-        "hypothesis": "The root cause of the incident is a service process stopped or crash-looping in the target-gateway service, resulting in high latency and error rates."
+        "confidence": 0,
+        "evidence_refs": [],
+        "hypothesis": "The root cause of the incident is the high p95 latency on target-gateway, which is currently 7304.1ms, exceeding the threshold of 1000.0ms."
       },
       "name": "submit_diagnosis"
     }

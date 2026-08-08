@@ -2,14 +2,14 @@
   "calls": [
     {
       "arguments": {
-        "services": "target-orders"
+        "services": "target-gateway"
       },
       "name": "run_verification_probes"
     },
     {
       "arguments": {
         "passed": true,
-        "summary": "p95 latency on target-orders confirmed to be 1000.0 seconds, within threshold."
+        "summary": "Error rate on target-gateway is 0.00%."
       },
       "name": "submit_verification"
     }
