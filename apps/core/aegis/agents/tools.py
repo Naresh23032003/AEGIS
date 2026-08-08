@@ -85,30 +85,165 @@ async def query_metrics(service: str) -> str:
     return wrap(f"query_metrics({service})", json.dumps(snapshot, indent=2))
 
 
+# A tag search returns the most recent traces and one summary line each, so
+# it can neither find the slow request nor say what the slow request was
+# waiting on. Both halves are fixed here: ask TraceQL for the service's slow
+# traces, then open the slowest few and report, per trace, the slowest call
+# made to each dependency.
+#
+# Per dependency, not simply the slowest spans: the slowest spans in a
+# checkout trace are the HTTP spans that contain all the others, and a list
+# of them says a request took 6s without saying what it waited on. One row
+# per callee puts the database call and the cache call next to each other
+# with their real timings, which is the comparison a diagnosis turns on.
+# The caps keep the result inside aegis.agents.quarantine's 200-line
+# budget, and slowest-first means truncation can only cost the fast tail.
+SLOW_TRACE_THRESHOLD = "500ms"
+TRACES_REPORTED = 10
+SLOW_TRACES_EXPANDED = 3
+CALLS_PER_TRACE = 5
+
+
+def _attr_map(attributes: list[dict[str, Any]]) -> dict[str, str]:
+    """OTLP JSON attributes are [{key, value: {stringValue|intValue|...}}].
+    Flattened to plain strings; the exact scalar type carries no diagnostic
+    weight here."""
+    out: dict[str, str] = {}
+    for attr in attributes:
+        key = attr.get("key")
+        value = attr.get("value")
+        if not isinstance(key, str) or not isinstance(value, dict) or not value:
+            continue
+        out[key] = str(next(iter(value.values())))
+    return out
+
+
+def _span_callee(kind: str, attrs: dict[str, str]) -> str | None:
+    """What this span was talking to, as the span itself records it. A
+    database client span carries net.peer.name; an HTTP client span carries
+    the URL it called. Only client spans call anything: a FastAPI server
+    span also carries an http.url, its own, and reporting that as a callee
+    would tell the reader a service calls itself."""
+    if kind != "SPAN_KIND_CLIENT":
+        return None
+    peer = attrs.get("net.peer.name")
+    if peer:
+        port = attrs.get("net.peer.port")
+        system = attrs.get("db.system", "tcp")
+        return f"{system} {peer}:{port}" if port else f"{system} {peer}"
+    url = attrs.get("http.url")
+    if url:
+        host = url.split("://", 1)[-1].split("/", 1)[0]
+        return f"http {host}"
+    return None
+
+
+def _slowest_calls(detail: dict[str, Any]) -> list[dict[str, Any]]:
+    """The slowest call this trace made to each dependency, slowest first."""
+    calls: list[dict[str, Any]] = []
+    for batch in detail.get("batches", []) or []:
+        resource = _attr_map(batch.get("resource", {}).get("attributes", []) or [])
+        emitter = resource.get("service.name", "unknown")
+        for scope_spans in batch.get("scopeSpans", []) or []:
+            for span in scope_spans.get("spans", []) or []:
+                callee = _span_callee(
+                    str(span.get("kind", "")), _attr_map(span.get("attributes", []) or [])
+                )
+                if callee is None:
+                    continue
+                try:
+                    duration_ns = int(span["endTimeUnixNano"]) - int(span["startTimeUnixNano"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                calls.append(
+                    {
+                        "service": emitter,
+                        "span": span.get("name"),
+                        "calls": callee,
+                        "duration_ms": round(duration_ns / 1e6, 2),
+                    }
+                )
+    calls.sort(key=lambda c: c["duration_ms"], reverse=True)
+    seen: set[str] = set()
+    slowest: list[dict[str, Any]] = []
+    for call in calls:
+        if call["calls"] in seen:
+            continue
+        seen.add(call["calls"])
+        slowest.append(call)
+    return slowest[:CALLS_PER_TRACE]
+
+
+async def _fetch_slowest_calls(client: httpx.AsyncClient, trace_id: str) -> list[dict[str, Any]]:
+    try:
+        resp = await client.get(f"{TEMPO_URL}/api/traces/{trace_id}")
+        resp.raise_for_status()
+        detail = resp.json()
+    except (httpx.HTTPError, ValueError):
+        # One unreadable trace costs its spans, not the whole tool call.
+        return []
+    return _slowest_calls(detail)
+
+
+async def _search_traces(client: httpx.AsyncClient, params: dict[str, Any]) -> list[dict[str, Any]]:
+    resp = await client.get(f"{TEMPO_URL}/api/search", params=params)
+    resp.raise_for_status()
+    return resp.json().get("traces", []) or []
+
+
+async def _slow_traces(client: httpx.AsyncClient, service: str) -> list[dict[str, Any]]:
+    """TraceQL, so the answer is the service's slow traces rather than its
+    most recent ones. An empty result is itself evidence: nothing this
+    service handled took longer than the threshold."""
+    query = f'{{ resource.service.name = "{service}" && duration > {SLOW_TRACE_THRESHOLD} }}'
+    try:
+        return await _search_traces(client, {"q": query, "limit": 20})
+    except httpx.HTTPError:
+        # A Tempo that will not answer TraceQL still answers tag search;
+        # the caller falls back rather than losing the tool entirely.
+        return []
+
+
 async def query_traces(service: str) -> str:
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(
-                f"{TEMPO_URL}/api/search",
-                params={"tags": f"service.name={service}", "limit": 20},
-            )
-            resp.raise_for_status()
-            data = resp.json()
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            traces = await _slow_traces(client, service)
+            searched = f"traces from {service} slower than {SLOW_TRACE_THRESHOLD}"
+            if not traces:
+                traces = await _search_traces(
+                    client, {"tags": f"service.name={service}", "limit": 20}
+                )
+                searched = (
+                    f"no traces from {service} slower than {SLOW_TRACE_THRESHOLD}; "
+                    "showing its most recent traces instead"
+                )
+            if not traces:
+                return wrap(f"query_traces({service})", "no traces found")
+
+            summary = sorted(
+                (
+                    {
+                        "trace_id": t.get("traceID"),
+                        "root_service": t.get("rootServiceName"),
+                        "duration_ms": t.get("durationMs"),
+                    }
+                    for t in traces
+                ),
+                key=lambda t: t["duration_ms"] or 0,
+                reverse=True,
+            )[:TRACES_REPORTED]
+            for entry in summary[:SLOW_TRACES_EXPANDED]:
+                trace_id = entry["trace_id"]
+                if not isinstance(trace_id, str):
+                    continue
+                calls = await _fetch_slowest_calls(client, trace_id)
+                if calls:
+                    entry["slowest_call_per_dependency"] = calls
     except httpx.HTTPError as exc:
         return wrap(f"query_traces({service})", f"query failed: {exc}")
 
-    traces = data.get("traces", []) or []
-    if not traces:
-        return wrap(f"query_traces({service})", "no traces found")
-    summary = [
-        {
-            "trace_id": t.get("traceID"),
-            "root_service": t.get("rootServiceName"),
-            "duration_ms": t.get("durationMs"),
-        }
-        for t in traces
-    ]
-    return wrap(f"query_traces({service})", json.dumps(summary, indent=2))
+    payload = {"searched": searched, "traces": summary}
+    return wrap(f"query_traces({service})", json.dumps(payload, indent=2))
 
 
 async def list_recent_changes(service: str) -> str:
@@ -265,7 +400,9 @@ def diagnosis_tool_specs() -> list[ToolSpec]:
         ),
         ToolSpec(
             name="query_traces",
-            description="Fetch a summary of recent traces for a target service from Tempo.",
+            description="Fetch a target service's slowest traces from Tempo (its most recent "
+            "ones if none are slow): each trace's duration, and for the slowest few, how long "
+            "its slowest call to each dependency took and which service made that call.",
             schema={
                 "type": "object",
                 "properties": {"service": {"type": "string"}},
