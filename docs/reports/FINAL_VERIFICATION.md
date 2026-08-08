@@ -1861,3 +1861,320 @@ confirms worked.
 - Outstanding for the release decision: defect 13, and behind it the
   three-sample collection and the README table update that the brief gates
   on a clean live suite.
+
+## Phase 10
+
+Run on 2026-08-08, branch `phase-10` off `phase-9`, same machine and stack.
+Phase 10 spent its one scoped attempt at defect 13 on the evidence layer:
+`query_traces` now finds slow traces and times each dependency call inside
+them, and the diagnose prompt requires the hypothesis to rest on a tool
+output the model actually read. The fixture suite passes 18/18 with both
+changes in.
+
+The live suite did not test them. It reached 13 of 18, and all five
+failures are the same 429: the large model's daily token budget was
+already at roughly 92,000 of 100,000 when the run started, held by phase
+9's suite seven hours earlier. Every `latency` incident escalated before
+diagnose made one tool call. The three-sample collection the brief made
+unconditional hit the same wall on its first incident and was stopped.
+Defect 13 is therefore neither confirmed fixed nor confirmed open by this
+pass, and it is recorded that way below.
+
+### What changed
+
+| Commit    | What                                                                    |
+| --------- | ----------------------------------------------------------------------- |
+| `498b6c8` | `query_traces` searches for slow traces and times each dependency call  |
+| `2a278c8` | diagnose prompt: three evidence rules, and traces before naming a cause |
+
+### The tool was the larger half of defect 13
+
+The phase 9 trace reads as a reasoning failure: the model blamed the cache
+for latency that sat between orders and its database, with the
+distinguishing evidence "available and apparently unused". Checking what
+the tool actually returned changes that reading. `query_traces` asked
+Tempo for the 20 most recent traces tagged with the service and reported
+three fields per trace: id, root service, duration. Two things follow.
+
+A tag search returns recent traces, not slow ones. With the 1500ms toxic
+installed and every checkout through target-orders taking three seconds,
+the tool came back with this:
+
+```
+$ curl -s -X POST http://localhost:8080/api/chaos/latency
+$ docker exec target-gateway python -c "...POST /orders x3..."
+3058.8 ms 200
+3058.4 ms 200
+3046.5 ms 200
+$ # what the old query_traces(target-orders) returned at that moment
+  {"trace_id": "...", "root_service": "target-gateway", "duration_ms": 34}
+  {"trace_id": "...", "root_service": "target-gateway", "duration_ms": 71}
+  {"trace_id": "...", "root_service": "target-gateway", "duration_ms": 11}
+```
+
+Requests were taking three seconds and the tool was reporting 34ms. The
+slow traces existed the whole time; TraceQL finds them directly:
+
+```
+$ q='{ resource.service.name = "target-orders" && duration > 500ms }'
+3091 <root span not yet received>
+6150 target-gateway
+1504 <root span not yet received>
+3007 target-orders
+```
+
+And a trace duration never says what the request waited on. So the tool now
+opens the slowest three and reports, per trace, the slowest call made to
+each dependency, with the service that made it and what it called. Against
+the live stack with the toxic in:
+
+```
+{
+  "searched": "traces from target-orders slower than 500ms",
+  "traces": [
+    {
+      "trace_id": "50f9bba3526a5dc3a139e57740d47881",
+      "duration_ms": 10581,
+      "slowest_call_per_dependency": [
+        {"service": "target-gateway", "span": "POST",   "calls": "http target-orders:9001",     "duration_ms": 5013.37},
+        {"service": "target-orders",  "span": "INSERT", "calls": "postgresql toxiproxy:5432",   "duration_ms": 3012.90},
+        {"service": "target-orders",  "span": "SET",    "calls": "redis shop-redis:6379",       "duration_ms": 0.47}
+      ]
+    }
+  ]
+}
+```
+
+3012.90ms against 0.47ms, in one list, on the two dependencies the wrong
+answer confused. One row per callee rather than the five slowest spans
+outright: the slowest spans in a checkout trace are the HTTP spans that
+contain all the others, and the first version of this fix returned
+6225ms, 3055ms, 3050ms, 3038ms and 3037ms of enclosing spans while the
+1.5s database call sat below the cut. Server spans carry their own
+`http.url`, so only client spans are credited with calling anything.
+
+Caps of 10 traces reported, 3 expanded, 5 calls each keep the result
+inside the quarantine wrapper's 200-line budget (measured: 124 lines,
+3564 characters under fault), and slowest-first ordering means a
+truncation can only ever cost the fast tail.
+
+### The prompt iteration
+
+One iteration, on evidence rather than on the answer. Three rules: a claim
+in the hypothesis has to be something a tool output in this run shows;
+blaming a dependency means reading how long calls to it took first, and a
+dependency answering in single-digit milliseconds is not the answer
+however plausible it sounds; `evidence_refs` has to include the output the
+hypothesis rests on. The workflow section keeps the cheap path for faults
+that name themselves in logs and singles out slowness as the case metrics
+cannot close.
+
+The prompt does not mention the latency scenario, the toxic, Toxiproxy, or
+the injection API. It never says which fault to expect. `net.peer.name` on
+a database span happens to read `toxiproxy` because that is the hostname
+orders connects through (plan/01's topology), and that string reaches the
+model as quarantined tool data, not as prompt text.
+
+The paused-cache route is unchanged in substance and now reached through
+the same discipline: a slow call to the cache, or no completed spans at
+all, then `get_container_stats("shop-redis")`.
+
+### make lint test
+
+```
+$ make lint test
+ruff:     All checks passed!
+mypy:     Success: no issues found in 51 source files
+eslint:   (clean, both workspaces)
+prettier: All matched files use Prettier code style!
+pytest:   88 passed, 2 warnings in 0.49s
+vitest:   Test Files 8 passed (8), Tests 46 passed (46)
+opa:      PASS: 9/9
+```
+
+88 unit tests against phase 9's 84. The four new ones cover the per-span
+timings and their callees, the one-row-per-dependency rule, the fallback
+when nothing is slower than the threshold, and degradation when Tempo will
+not serve a trace body.
+
+### Fixture e2e: 18/18 on the second attempt
+
+The first attempt returned 17 of 18, on a stack that had been up for 100
+seconds:
+
+```
+### fixture e2e start 2026-08-08T02:06:16Z
+E       TimeoutError: no incident for error_rate/target-payments within 90s
+FAILED e2e/test_adversarial.py::test_adversarial_log_line_never_yields_flush_queue
+1 failed, 17 passed in 1061.57s (0:17:41)
+```
+
+That failure is upstream of anything this phase changed: it timed out
+waiting for detection to open an incident, before any agent node ran. The
+same test alone against the warm stack:
+
+```
+$ MOCK_LLM=1 .venv/bin/python -m pytest e2e/test_adversarial.py -q
+.                                                                        [100%]
+1 passed in 115.40s (0:01:55)
+```
+
+And the full suite, rerun on the warm stack:
+
+```
+### fixture e2e rerun start 2026-08-08T02:27:07Z
+MOCK_LLM=1 .venv/bin/python -m pytest e2e -q
+..................                                                       [100%]
+18 passed in 1045.94s (0:17:25)
+```
+
+Fixtures replay by (incident, scenario, node) sequence index rather than
+by prompt content, so the prompt change invalidated none of them and none
+were re-recorded. Tools execute live in both modes, so the fixture runs did
+exercise the new `query_traces` against real Tempo.
+
+### Live e2e: 13/18, and none of the five failures is about diagnosis
+
+`.env` was switched to `MOCK_LLM=0` and the containers recreated, and the
+stack was given a three minute warm-up first, since the cold start is what
+cost the adversarial test above:
+
+```
+$ docker exec aegis-core-worker-1 printenv MOCK_LLM LLM_LARGE
+0
+llama-3.3-70b-versatile
+```
+
+```
+### live e2e start 2026-08-08T02:48:41Z LLM_LARGE=llama-3.3-70b-versatile
+MOCK_LLM=0 .venv/bin/python -m pytest e2e -q
+FAILED e2e/test_scenarios.py::test_latency_heals - AssertionError: {'id': 'in...
+FAILED e2e/test_scenarios.py::test_crash_heals - AssertionError: {'id': 'inc_...
+FAILED e2e/test_scenarios.py::test_error_spike_heals - AssertionError: {'id':...
+FAILED e2e/test_scenarios.py::test_memory_leak_heals - AssertionError: {'id':...
+FAILED e2e/test_scenarios.py::test_cache_outage_heals - AssertionError: {'id'}
+5 failed, 13 passed in 1019.75s (0:16:59)
+### live e2e end 2026-08-08T03:05:41Z
+```
+
+All five assert `status == 'resolved'` and got `escalated`. The reason is
+identical on all five:
+
+```
+03:05:31.210 incident.detected     latency_p95 target-orders p95=7124.57ms
+03:05:32.605 incident.classified   sev2
+03:05:32.610 agent.run.started     diagnose llama-3.3-70b-versatile
+03:05:39.860 agent.run.failed      429 tokens per day (TPD): Limit 100000, Used 99742
+03:05:39.883 incident.escalated    reason: agent run crashed
+```
+
+Seven seconds from diagnose starting to diagnose dying, with no tool call
+in between. 12 of the run's 14 escalations carry a 429 in their reason.
+Every scenario failed the same way, which is itself the signal: a
+diagnosis-quality problem does not take out `crash` and `memory_leak`
+alongside `latency`.
+
+### The budget was not fresh, and that is measurable
+
+```
+Rate limit reached for model `llama-3.3-70b-versatile` ... on tokens per
+day (TPD): Limit 100000, Used 99742, Requested 1629. Please try again in
+19m44.544s.
+```
+
+"Try again in 19m44s" is the tell: Groq's TPD is a rolling 24 hour window,
+not a calendar-day reset. Phase 9's suite spent 76,942 large-model tokens
+between 19:47Z and 20:07Z on 2026-08-07, and this run started at 02:48Z on
+2026-08-08, about seven hours later. Those tokens were still on the
+counter. What this run spent on its own:
+
+```
+model                   | runs | tokens_in | tokens_out | total | cost
+llama-3.1-8b-instant    |  35  |   22335   |    1688    | 24023 | $0.00135
+llama-3.3-70b-versatile |  29  |   22506   |     920    | 23426 | $0.01399
+```
+
+23,426 large-model tokens, and it still ran out, because it began with
+roughly 8,000 of headroom and was fed only by what aged out of the window
+mid-run. The phase 9 report's ceiling of "two runs a day on one key" holds
+only if those two runs are more than 24 hours apart, not merely on
+different dates. That correction is the durable finding of this pass.
+
+### collect_live_numbers: attempted, and stopped on the same wall
+
+The brief made the three-sample collection unconditional this phase, so it
+was attempted rather than gated. A probe first accepted a 32,000 token
+reservation, which read as headroom; it was not. The first incident of the
+first scenario died the same way, and a probe taken immediately after gave
+the real figure:
+
+```
+### collect_live_numbers start 2026-08-08T03:08:27Z
+03:09:12.675 agent.run.failed   diagnose  429 ... tokens per day (TPD)
+03:09:12.688 incident.escalated reason: agent run crashed
+
+$ # 20,000-token reservation, immediately after
+status 429
+Limit 100000, Used 99555, Requested 20039
+```
+
+445 tokens of headroom against roughly 18,000 needed. The run was killed
+rather than left to generate escalated rows that measure a quota, and both
+chaos toggles were cleared:
+
+```
+$ curl -s http://localhost:8080/api/chaos/error_spike
+{"scenario":"error_spike","fault_present":false}
+$ curl -s http://localhost:8080/api/chaos/cache_outage
+{"scenario":"cache_outage","fault_present":false}
+```
+
+So no number in the README's measured table moved, the
+`cache_outage (n=1)` caveat stays, and the remaining rows were not
+re-checked against the 20% band, for the third pass running and the same
+reason each time. The bulk of the window frees around 19:47Z on
+2026-08-08.
+
+### README
+
+The measured table is untouched, since nothing was re-measured. "What this
+is not" gained a paragraph naming diagnosis quality as the honest weak
+point: that on the free-tier model the latency scenario is read as a cache
+fault roughly as often as not, that the action taken in that case is legal,
+reversible and policy-gated, and that the incident carries
+`[injected fault still present at verify]` in its summary with
+`injected_fault_present` in the event log. That claim rests on the phase 8
+and phase 9 runs; phase 10 added no sample either way, and the paragraph
+does not pretend otherwise.
+
+### Defect table
+
+| #   | Severity | What                                                                                                                                                                 | Status                          |
+| --- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| 13  | medium   | Live diagnose reads database latency as a cache fault, so `latency` heals with `restart_dependency` and the toxic survives a passing verify                          | open, untested this pass        |
+| 14  | medium   | `query_traces` searched recent traces, not slow ones, and reported no per-span timings, so the evidence separating a slow database from a slow cache was unreachable | fixed (phase 10), fixtures only |
+| 15  | low      | The phase 9 budget arithmetic read the token cap as per calendar day; it is a rolling 24 hour window, so two runs seven hours apart share one budget                 | recorded, no code change        |
+
+Defect 13 stays open and its status changes from "live model quality" to
+"untested this pass". The attempt was made and the evidence layer behind it
+is measurably better, but the model never saw the new evidence, so nothing
+here is a claim about whether it would have read it correctly. Defect 14 is
+new, and it is the part of defect 13 that was never a reasoning problem:
+the tool could not surface the timing the diagnosis needed. It is fixed and
+covered by four unit tests and the fixture suite, and it has not been
+exercised by a live model.
+
+### State this section leaves behind
+
+- Branch `phase-10`, tagged `phase-10`. Nothing pushed, no remote touched,
+  `v0.1.0` not tagged.
+- `.env` back to `MOCK_LLM=1` and the committed default model, never
+  staged. It differs from `.env.example` only in the redacted secret and
+  one stale comment line.
+- The stack is up in fixture mode. `make down` clears it, including the 29
+  incident rows the live run generated and the 2 the stopped collection
+  added.
+- Outstanding for the release decision: defect 13, still untested against a
+  live model, and behind it the three-sample collection and the README
+  table update. Both need a large-model budget that is genuinely 24 hours
+  clear of the last suite.

@@ -111,6 +111,21 @@ approvals, a larger action catalog) are tracked as GitHub issues, not
 built here. `MOCK_LLM=1` exists so the demo and CI never depend on a live
 model at all.
 
+Diagnosis quality is the honest weak point, and the `latency` scenario is
+where it shows. On the free-tier model, roughly as often as not, AEGIS
+reads 1500ms of injected database latency as a cache fault and restarts
+the cache instead of removing the proxy delay. The symptom clears and the
+incident resolves, so a reader watching only the status would see a
+success. What that reader gets instead is a labelled one: verification
+re-checks whether the originally injected fault is still in place and
+writes the answer into the hash-chained event log
+(`injected_fault_present`), and an incident that healed with its fault
+still live carries `[injected fault still present at verify]` in its
+summary. The action taken in that case is still a legal catalog action,
+reversible, and approved by policy before it ran. The label existing is
+the point: the system reports what it actually did, including when the
+diagnosis behind it was wrong.
+
 ## Layout
 
 See [plan/01-architecture.md](plan/01-architecture.md) for the full monorepo
