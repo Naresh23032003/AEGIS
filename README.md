@@ -141,7 +141,16 @@ it actually did, including the parts that did not work.
 Read the measured table above as phase 6 numbers from a different model set
 (`openai/gpt-oss-120b`, `gpt-oss-20b`, `qwen3.6-27b`). On the current model
 none of the five reproduces inside 20%; four are much faster because the
-diagnosis step stopped doing work. Details in
+diagnosis step stopped doing work.
+
+One thing about the two paragraphs above: the prompt that produced them is
+gone. Until phase 12 the diagnose prompt listed all five injected faults by
+mechanism, so a model handed a symptom could match the list and answer
+without reading anything, which is the most likely explanation for the zero
+`query_traces` calls. That paragraph was deleted in phase 12 and nothing
+replaced it. The live suite has not been re-run since, so the numbers here
+are still the phase 11 ones and there is no measurement yet of what the
+model does without the list. Details in
 [docs/reports/FINAL_VERIFICATION.md](docs/reports/FINAL_VERIFICATION.md).
 
 ## Layout
