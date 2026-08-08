@@ -27,9 +27,10 @@ there rather than hidden here).
 | memory_leak        | auto     | 21s        | $0.0019             | `restart_service` (green)  |
 | cache_outage (n=1) | auto     | 136s       | $0.0023             | `remove_toxic` (green)     |
 
-Fixture runs (`MOCK_LLM=1`, deterministic, no API key) heal all five
-scenarios in well under a minute each; that's the mode CI and the
-quickstart below run on.
+Fixture runs (`MOCK_LLM=1`, deterministic, no API key) heal four of the
+five scenarios in well under a minute each; that's the mode CI and the
+quickstart below run on. `latency` is the exception since phase 13, and
+the reason is in "What this is not" below.
 
 ## Quickstart
 
@@ -111,46 +112,46 @@ approvals, a larger action catalog) are tracked as GitHub issues, not
 built here. `MOCK_LLM=1` exists so the demo and CI never depend on a live
 model at all.
 
-Diagnosis quality is the honest weak point, and it is not where earlier
-runs placed it. On `llama-3.3-70b-versatile` the model mostly skips its own
-evidence tools. Across 24 live diagnoses in the phase 11 run it called
-`query_traces` zero times and `query_metrics` and `query_logs` five times
-each, answering directly in the rest. `latency` does now heal correctly,
-two samples out of two, with `remove_toxic` pulling the injected delay in
-3 seconds. It got there in 464ms without reading a single trace timing, so
-the outcome is right and the reasoning under it is unproven.
+Diagnosis quality is the honest weak point, and until phase 13 the prompts
+were hiding how weak. The diagnose prompt used to list all five injected
+faults by mechanism; the remediation prompt used to name three of their
+fixes with the parameter already filled in. A model handed a symptom could
+match the list and answer without reading anything. Both are gone now,
+deleted in phases 12 and 13.
 
-`cache_outage` is the same behaviour failing. That scenario pauses
-`shop-redis` and trips the same p95 rule as `latency`, and the model gave
-it the `latency` answer: two restarts of target-orders, then three attempts
-to remove a database toxic that was never installed, each returning
-`removed: false`. Fixtures heal it with `restart_dependency` on
-`shop-redis`. The live run never healed it. The test's own cleanup cleared
-the fault at the 240 second mark and the incident closed 12 seconds later,
-which is why its recorded time is not a heal time.
+What the model does without them, over five live diagnoses on
+`llama-3.3-70b-versatile`: one called `query_metrics` and `query_logs`
+before answering, four answered on turn 1 with no tool call, and none
+called `query_traces`. That last number is now zero across 29 live
+diagnoses and three phases, so the evidence tool built in phase 10 has
+never been called once. The four tool-free runs used to name a fault from
+the list at confidence 0.5 to 0.8; they now restate the symptom they were
+handed at confidence 0.0. The model was not diagnosing before and is not
+diagnosing now. It has stopped sounding like it is.
 
-Two things survive that. Verification re-checks whether the originally
-injected fault is still in place and writes the answer into the
-hash-chained event log (`injected_fault_present`), so an incident that
-closes over a live fault carries `[injected fault still present at verify]`
-in its summary. Every action taken above was a legal catalog action,
-policy-approved before it ran, and the second target-orders restart was
-rolled back automatically when verification failed. The system reports what
-it actually did, including the parts that did not work.
+`latency` no longer heals, and that is the clearest consequence. With the
+toxic's name out of the prompt the model proposes `restart_service` on
+target-orders, a restart does nothing to a Toxiproxy toxic, and the
+incident closes with the fault still installed. It closes because
+verification never compares p95 against its threshold: the probe reported
+10,000ms against a 1,000ms limit and still returned `all_healthy: true`.
+That is a real bug, it has been there since phase 2, and it is why
+`test_latency_heals` fails on fixtures.
+
+Two things survive that. Verification separately re-checks whether the
+originally injected fault is still in place and writes the answer into the
+hash-chained event log (`injected_fault_present`), so both of those
+incidents carry `[injected fault still present at verify]` in their
+summary. Every action taken was a legal catalog action, policy-approved
+before it ran. The system reports what it actually did, including the
+parts that did not work.
 
 Read the measured table above as phase 6 numbers from a different model set
 (`openai/gpt-oss-120b`, `gpt-oss-20b`, `qwen3.6-27b`). On the current model
-none of the five reproduces inside 20%; four are much faster because the
-diagnosis step stopped doing work.
-
-One thing about the two paragraphs above: the prompt that produced them is
-gone. Until phase 12 the diagnose prompt listed all five injected faults by
-mechanism, so a model handed a symptom could match the list and answer
-without reading anything, which is the most likely explanation for the zero
-`query_traces` calls. That paragraph was deleted in phase 12 and nothing
-replaced it. The live suite has not been re-run since, so the numbers here
-are still the phase 11 ones and there is no measurement yet of what the
-model does without the list. Details in
+none of the five reproduces inside 20%. The full live suite has not
+completed since phase 11, which is a free-tier token budget of 100,000 a
+day against a suite that costs 86,000; five diagnoses is what phase 13
+could buy. Details in
 [docs/reports/FINAL_VERIFICATION.md](docs/reports/FINAL_VERIFICATION.md).
 
 ## Layout
