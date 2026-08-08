@@ -26,8 +26,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import signal
+import time
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
@@ -35,7 +38,8 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from aegis import approvals, db
 from aegis.agents.graph import (
     build_graph,
-    checkpoint_conn_string,
+    checkpointer_pool,
+    probe_checkpointer,
     resume_incident,
     resume_parked_run,
     run_incident,
@@ -50,6 +54,17 @@ logger = logging.getLogger("aegis.worker")
 DISPATCH_POLL_SECONDS = 2
 APPROVAL_POLL_SECONDS = 5
 APPROVAL_TIMEOUT_SECONDS = 15 * 60
+
+# Liveness for core-worker, which exposes no port (plan/01-architecture.md,
+# Runtime topology: ports "none"). run_health_loop touches this file only
+# after a checkpointer read has actually succeeded, so a worker whose
+# checkpointer is unreachable goes stale and docker's healthcheck fails it
+# instead of reporting a process that is up but cannot run a graph
+# (defect 17). HEALTH_STALE_SECONDS is 4 poll intervals plus room for a
+# slow pass.
+HEALTH_FILE = Path(os.environ.get("AEGIS_WORKER_HEALTH_FILE", "/tmp/aegis-worker-health"))  # noqa: S108
+HEALTH_POLL_SECONDS = 10
+HEALTH_STALE_SECONDS = 45
 
 _CLAIM_RESOLVED_APPROVALS = """
 UPDATE aegis.incidents SET status = 'resolving'
@@ -258,6 +273,36 @@ class Runner:
             self.spawn(row["id"], self.resume_parked(row["id"]))
 
 
+def health_is_fresh(now: float | None = None) -> bool:
+    """The predicate the container healthcheck runs (see
+    deploy/docker-compose.yml, core-worker). Kept here so the test and the
+    healthcheck agree on one definition of stale."""
+    now = time.time() if now is None else now
+    try:
+        written = float(HEALTH_FILE.read_text().strip())
+    except (OSError, ValueError):
+        return False
+    return now - written < HEALTH_STALE_SECONDS
+
+
+async def run_health_loop(checkpointer: AsyncPostgresSaver, stop: asyncio.Event) -> None:
+    """Report healthy only while the checkpointer answers. A failed probe
+    writes nothing, so the file ages out and the container turns unhealthy
+    within HEALTH_STALE_SECONDS; the pool usually has a replacement
+    connection by the next pass, and then the file starts moving again."""
+    while not stop.is_set():
+        try:
+            await probe_checkpointer(checkpointer)
+        except Exception:
+            logger.exception("checkpointer probe failed; worker is reporting unhealthy")
+        else:
+            await asyncio.to_thread(HEALTH_FILE.write_text, f"{time.time()}\n")
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=HEALTH_POLL_SECONDS)
+        except TimeoutError:
+            pass
+
+
 async def main() -> None:
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -266,7 +311,8 @@ async def main() -> None:
 
     await db.init_schema()
 
-    async with AsyncPostgresSaver.from_conn_string(checkpoint_conn_string()) as checkpointer:
+    async with checkpointer_pool() as pool:
+        checkpointer = AsyncPostgresSaver(pool)
         await checkpointer.setup()
         graph = build_graph(checkpointer)
         runner = Runner(graph)
@@ -280,6 +326,7 @@ async def main() -> None:
                 runner.run_dispatch_loop(stop),
                 runner.run_approval_loop(stop),
                 run_supervisor_loop(runner.resume, stop),
+                run_health_loop(checkpointer, stop),
             )
         finally:
             if runner.tasks:
