@@ -2178,3 +2178,309 @@ exercised by a live model.
   live model, and behind it the three-sample collection and the README
   table update. Both need a large-model budget that is genuinely 24 hours
   clear of the last suite.
+
+## Phase 11
+
+Run on 2026-08-08, branch `phase-11` off `phase-10`, same machine and
+stack. A measurement pass only: no code, prompt, or assertion changed, and
+`git status` was clean at the start and stays clean apart from this file
+and the README. There is no `plan/phases/phase-11.md`; the brief came in
+directly and is restated at the top of each step below.
+
+The live suite reached 16 of 18 with zero rate limits, and it answered the
+question three passes had been unable to reach. `test_latency_heals`
+passes. It also showed why that pass proves less than it looks: across 24
+live diagnoses the model called `query_traces` zero times. Phase 10 built
+that tool and the prompt rule that depends on it, and the live model has
+still never used either. `test_cache_outage_heals` fails, and the way it
+fails is the same behaviour with the sign flipped.
+
+### Step 1: the budget gate, and a key change
+
+The brief required a real token reservation rather than a 200 on a small
+request. Groq charges TPD against reserved `max_tokens`, so a 30-token
+request can succeed with almost nothing left. The committed key was
+exhausted:
+
+```
+$ probe: model=llama-3.3-70b-versatile requested_max_tokens=20000
+status 429
+  Rate limit reached for model `llama-3.3-70b-versatile` in organization
+  `org_01kzdeh5t2e5pvgbrxct4fkpgz` ... on tokens per day (TPD):
+  Limit 100000, Used 94035, Requested 20041.
+  Please try again in 3h22m41.663999999s.
+```
+
+5,965 tokens against the roughly 95,000 the full brief needed. A second key
+was supplied for the run. It belongs to a different organization
+(`org_01kzft69ksexkr6dz5dww8ytr6`) and so carries its own untouched pool:
+
+```
+$ probe: requested_max_tokens=20000
+status 413   ... on tokens per minute (TPM): Limit 12000, Requested 20041
+
+$ probe: requested_max_tokens=11000
+status 200
+  x-ratelimit-limit-tokens: 12000
+  x-ratelimit-remaining-tokens: 959
+  content: ok
+```
+
+Both lines are needed to call the gate passed. Groq checks TPD before TPM,
+so a 20,041 request that fails only on the per-minute cap has already
+cleared the daily one. The 11,000 request then took the reservation for
+real: remaining-tokens fell from 12,000 to 959, which is 11,041 held, not a
+30-token courtesy 200.
+
+### The daily limit is a leaky bucket, not a rolling window
+
+Phase 10 read the TPD as a 24 hour window keyed to when tokens were spent
+and predicted "the bulk of the window frees around 19:47Z on 2026-08-08".
+That is wrong, and the retry-after strings say so. Against a bucket
+refilling continuously at limit/24h:
+
+```
+old key 20041  deficit= 14076 predicted= 3.38h  told= 3.38h  err= 0.0%
+old key 30041  deficit= 24129 predicted= 5.79h  told= 5.79h  err= 0.0%
+new key 20041  deficit= 16446 predicted= 3.95h  told= 3.95h  err= 0.0%
+```
+
+Three points, exact. The refill is 4,166.7 tokens per hour and never
+arrives in a lump. Nothing "frees up" at a particular clock time, and
+waiting for a specific past run to age out is not a thing that happens.
+Budget for a run by dividing what it costs by 4,167 to get the hours of
+accrual it needs. This supersedes defect 15 as phase 10 stated it.
+
+### Step 2: make e2e-live, 16 of 18
+
+`.env` set to `MOCK_LLM=0` with the supplied key, containers recreated at
+04:39:37Z, all five chaos toggles confirmed `fault_present: false`, and
+three minutes of warm-up first, since phase 10 established that a cold
+stack is what fails the detection-timeout tests.
+
+```
+### live e2e start 2026-08-08T04:46:33Z LLM_LARGE=llama-3.3-70b-versatile
+MOCK_LLM=0 .venv/bin/python -m pytest e2e -q
+..........F......F                                                       [100%]
+FAILED e2e/test_detection_episodes.py::test_a_held_fault_opens_one_incident_per_pair
+FAILED e2e/test_scenarios.py::test_cache_outage_heals - TimeoutError: inciden...
+2 failed, 16 passed in 1149.68s (0:19:09)
+exit=2
+### live e2e end 2026-08-08T05:06:00Z
+```
+
+```
+$ docker logs aegis-core-worker-1 | grep -c "Rate limit"
+0
+```
+
+Zero 429s, against phase 10's 12. Every failure below is about behaviour.
+
+```
+model                    | runs | tokens_in | tokens_out | total | cost
+llama-3.1-8b-instant     |   44 |     29566 |       2259 | 31825 | $0.00176
+llama-3.3-70b-versatile  |   49 |     82678 |       3479 | 86157 | $0.05150
+
+incidents: 26, 20 resolved, 6 escalated
+```
+
+### test_latency_heals passes, and the reason it proves less than it looks
+
+The brief asked for whatever this test did, recorded. It passed, in both
+latency incidents the run produced, and the assertion it clears is the
+strict one: `_assert_healed` requires `fault_present is False` after the
+actions ran, so restarting the cache and leaving the toxic in place cannot
+pass it.
+
+```
+04:53:33.578 incident.detected      latency_p95 target-orders value=4849.99 threshold=1000.0
+04:53:34.954 agent.run.started      triage   llama-3.1-8b-instant
+04:53:35.237 incident.classified    sev2
+04:53:35.241 agent.run.started      diagnose llama-3.3-70b-versatile
+04:53:35.705 agent.step             submit_diagnosis
+04:53:35.712 agent.run.completed    diagnose tokens_in=1646 tokens_out=71 duration_ms=464
+04:53:36.189 action.proposed        remove_toxic tier=green {"toxic_name": "orders_shopdb_latency"}
+04:53:36.266 action.policy_checked  allow  opa_rule_id=allow_green_tier
+04:53:36.364 action.executed        {"toxic": "orders_shopdb_latency", "removed": true}
+04:53:36.812 verify.passed
+04:53:36.826 incident.resolved      autonomy=auto mttr_seconds=3
+```
+
+Defect 13's symptom did not reproduce. The model named the database toxic
+and removed it, twice, and nothing carried
+`[injected fault still present at verify]`.
+
+The line that matters is `agent.step submit_diagnosis` arriving 464ms after
+diagnose started, with no tool call before it. Phase 10's `query_traces`
+returns the per-dependency timings that separate a slow database from a
+slow cache, and the phase 10 prompt says a claim has to rest on a tool
+output the model read. The model read nothing. Counted over every diagnose
+run in the suite:
+
+```
+submit_diagnosis: 24
+query_metrics:     5
+query_logs:        5
+query_traces:      0
+```
+
+Zero calls to `query_traces` in 24 diagnoses. Phase 10 could not test its
+evidence layer because the budget died; phase 11 had the budget and the
+layer went untouched anyway. That is a different and more useful negative
+result: the tool is not being reached, so its quality was never the
+binding constraint.
+
+### test_cache_outage_heals fails, and it is the same behaviour
+
+`cache_outage` pauses `shop-redis` (`actions/execute.py`), which raises p95
+on target-orders and fires the same `latency_p95` rule as the `latency`
+scenario. The fixture path heals it with `restart_dependency` on
+`shop-redis`. Live:
+
+```
+05:01:57 incident.detected     latency_p95 target-orders 7140.6ms
+05:02:35 action.executed       restart_service {"service": "target-orders"}
+05:03:36 verify.failed
+05:03:39 action.executed       restart_service {"service": "target-orders"}
+05:03:45 action.rolled_back
+05:03:46 action.executed       remove_toxic {"toxic_name": "orders_shopdb_latency"} -> removed: false
+05:04:48 verify.failed
+05:04:49 action.executed       remove_toxic {"toxic_name": "orders_shopdb_latency"} -> removed: false
+05:05:50 verify.failed
+05:05:53 action.executed       remove_toxic {"toxic_name": "orders_shopdb_latency"} -> removed: false
+05:06:09 verify.passed
+05:06:09 incident.resolved     autonomy=auto mttr_seconds=251
+```
+
+Three attempts to remove a toxic that was never installed, each answered
+`removed: false`. Its four diagnose runs called `query_metrics` and
+`query_logs` and never `query_traces` or `get_container_stats("shop-redis")`,
+which is the paused-cache route the phase 10 prompt describes.
+
+The `resolved` on the last line is an artifact and must not be read as a
+heal. `wait_for_resolution` gives up at 240s, which lands at 05:05:57, and
+the test's `finally` then calls `DELETE /api/chaos/cache_outage` and
+unpauses `shop-redis`. Verification passed 12 seconds later against a stack
+the test had already fixed. The agent never healed this incident, and 251s
+is not an MTTR.
+
+Put beside the latency result, one behaviour explains both. On a
+`latency_p95` incident this model answers `remove_toxic` without looking.
+The `latency` scenario is a toxic, so that lands. `cache_outage` is a
+paused container, so it cannot.
+
+### The other failure is upstream of diagnosis
+
+```
+E       TimeoutError: no incident for error_rate/target-payments within 90s
+```
+
+`test_checkpoint_resume` kills core-worker on purpose, and the restart is
+visible:
+
+```
+2026-08-08 04:39:37,630 worker detection: 8 firing episodes rebuilt from the incidents table
+2026-08-08 04:49:31,788 worker detection: 8 firing episodes rebuilt from the incidents table
+```
+
+The fault was injected at 04:50:15, 44 seconds after that rebuild. An
+`error_rate` incident did open for target-gateway at 04:50:47 and none for
+target-payments, which is what defect 3's one-incident-per-(rule, service)
+episode rule does when the rebuild carries an episode forward that the
+resolved 04:47:06 payments incident had opened. Nothing this phase or
+phase 10 touched is involved, and the same message failed a fixture run in
+phase 10. Recorded as an observation about test ordering, not as a new
+defect, since the mechanism is a deliberate feature and the reproduction is
+a worker kill from another test file.
+
+### Step 3: the collection, not run, and the arithmetic for why
+
+The brief asked for three samples each of `error_spike` and `cache_outage`.
+It was not run. The suite left 3,595 tokens:
+
+```
+$ probe after the suite: requested_max_tokens=20000
+status 429
+  ... Limit 100000, Used 96405, Requested 20041.
+```
+
+Sized from this run's own per-incident figures rather than phase 8's
+estimate:
+
+| scenario                     | large tokens/sample | three samples |
+| ---------------------------- | ------------------- | ------------- |
+| error_spike (heals)          | 3,120               | ~9,400        |
+| cache_outage (does not heal) | 21,321              | ~64,000       |
+
+A failing `cache_outage` costs seven times a healthy incident because each
+failed verification buys another diagnose, plan and act cycle until the
+240s limit. At 4,167 tokens per hour the pair needs about 17 hours of
+accrual, and roughly 64,000 of it would document six more failures of a
+scenario this run already characterised once. Skipped as a deliberate
+decision, not a budget accident. No number in the README's measured table
+moved and the `cache_outage (n=1)` caveat stays.
+
+### The 20% band: all five rows fail
+
+plan/07 item 2 requires live MTTR within 20% of the README's claims.
+Checked against this run's incidents, mapped by test execution order:
+
+```
+scenario        README   phase 11         band 20%  verdict
+latency            92s         3s          74-110s  FAIL (3% of claim, n=2)
+crash              61s         8s           49-73s  FAIL (13% of claim, n=1)
+error_spike       132s        85s         106-158s  FAIL (64% of claim, n=1)
+memory_leak        21s         7s           17-25s  FAIL (33% of claim, n=1)
+cache_outage      136s    no heal         109-163s  FAIL (fault never cleared by agent)
+```
+
+Four of the five are far faster than claimed, which is not good news. The
+README's numbers come from phase 6 on `openai/gpt-oss-120b`, `gpt-oss-20b`
+and `qwen3.6-27b`; these come from `llama-3.3-70b-versatile` skipping its
+evidence tools. An MTTR that collapses from 92s to 3s is the diagnosis step
+ceasing to do work, not the system getting faster. The table was left
+alone per the decision above, and the README's "What this is not" now says
+plainly that none of the five reproduces on the current model.
+
+### README
+
+The measured table is untouched. "What this is not" was rewritten against
+this run: the zero `query_traces` calls in 24 diagnoses, `latency` healing
+correctly in 3s without reading any trace timing, `cache_outage` not
+healing at all and its recorded time coming from test cleanup, the rollback
+that fired when verification failed, and the band result. The previous
+paragraph's claim, that the model reads database latency as a cache fault
+"roughly as often as not", is now contradicted by evidence and was removed.
+
+### Defect table
+
+| #   | Severity | What                                                                                                                                               | Status                                     |
+| --- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| 13  | medium   | Live diagnose reads database latency as a cache fault, so `latency` heals with `restart_dependency` and the toxic survives a passing verify        | symptom not reproduced, mechanism unproven |
+| 14  | medium   | `query_traces` searched recent traces, not slow ones, and reported no per-span timings                                                             | fixed (phase 10), still never called live  |
+| 15  | low      | The token cap was read as a per-calendar-day and then as a rolling 24h window; it is a bucket refilling at 4,167 tokens/hour                       | corrected (phase 11), no code change       |
+| 16  | high     | Live diagnose answers every `latency_p95` incident with `remove_toxic` without calling a tool, so `cache_outage` (paused `shop-redis`) never heals | open, reproduced once                      |
+
+Defect 13 does not close. Two samples healed correctly and neither read any
+evidence, so what phase 10 built is still unproven and the pass is not
+attributable to it. Defect 14 stays fixed and unexercised, for the second
+pass running, now because the model does not call the tool rather than
+because the budget ran out. Defect 16 is new and is filed above 13 in
+severity: an incident that closes without healing is worse than one that
+heals for the wrong reason, and this one is only labelled correctly by
+accident of the test's own cleanup.
+
+### State this section leaves behind
+
+- Branch `phase-11`, tagged `phase-11`. Nothing pushed, no remote touched,
+  `v0.1.0` not tagged.
+- `.env` restored byte-identical to its pre-run backup: `MOCK_LLM=1` and
+  the committed key. The key used for the run belongs to a different Groq
+  organization, was supplied for this run only, and was never staged.
+- All five chaos toggles verified `fault_present: false` after the run. The
+  stack is up in fixture mode with 26 incident rows from this run; `make
+down` clears them.
+- Outstanding for the release decision: defect 16, which is a live
+  scenario that does not heal, and behind it the question defect 13 and 14
+  now share, which is why diagnose reaches for no tools at all on this
+  model.

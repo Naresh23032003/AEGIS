@@ -111,20 +111,38 @@ approvals, a larger action catalog) are tracked as GitHub issues, not
 built here. `MOCK_LLM=1` exists so the demo and CI never depend on a live
 model at all.
 
-Diagnosis quality is the honest weak point, and the `latency` scenario is
-where it shows. On the free-tier model, roughly as often as not, AEGIS
-reads 1500ms of injected database latency as a cache fault and restarts
-the cache instead of removing the proxy delay. The symptom clears and the
-incident resolves, so a reader watching only the status would see a
-success. What that reader gets instead is a labelled one: verification
-re-checks whether the originally injected fault is still in place and
-writes the answer into the hash-chained event log
-(`injected_fault_present`), and an incident that healed with its fault
-still live carries `[injected fault still present at verify]` in its
-summary. The action taken in that case is still a legal catalog action,
-reversible, and approved by policy before it ran. The label existing is
-the point: the system reports what it actually did, including when the
-diagnosis behind it was wrong.
+Diagnosis quality is the honest weak point, and it is not where earlier
+runs placed it. On `llama-3.3-70b-versatile` the model mostly skips its own
+evidence tools. Across 24 live diagnoses in the phase 11 run it called
+`query_traces` zero times and `query_metrics` and `query_logs` five times
+each, answering directly in the rest. `latency` does now heal correctly,
+two samples out of two, with `remove_toxic` pulling the injected delay in
+3 seconds. It got there in 464ms without reading a single trace timing, so
+the outcome is right and the reasoning under it is unproven.
+
+`cache_outage` is the same behaviour failing. That scenario pauses
+`shop-redis` and trips the same p95 rule as `latency`, and the model gave
+it the `latency` answer: two restarts of target-orders, then three attempts
+to remove a database toxic that was never installed, each returning
+`removed: false`. Fixtures heal it with `restart_dependency` on
+`shop-redis`. The live run never healed it. The test's own cleanup cleared
+the fault at the 240 second mark and the incident closed 12 seconds later,
+which is why its recorded time is not a heal time.
+
+Two things survive that. Verification re-checks whether the originally
+injected fault is still in place and writes the answer into the
+hash-chained event log (`injected_fault_present`), so an incident that
+closes over a live fault carries `[injected fault still present at verify]`
+in its summary. Every action taken above was a legal catalog action,
+policy-approved before it ran, and the second target-orders restart was
+rolled back automatically when verification failed. The system reports what
+it actually did, including the parts that did not work.
+
+Read the measured table above as phase 6 numbers from a different model set
+(`openai/gpt-oss-120b`, `gpt-oss-20b`, `qwen3.6-27b`). On the current model
+none of the five reproduces inside 20%; four are much faster because the
+diagnosis step stopped doing work. Details in
+[docs/reports/FINAL_VERIFICATION.md](docs/reports/FINAL_VERIFICATION.md).
 
 ## Layout
 
