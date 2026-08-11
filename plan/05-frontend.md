@@ -68,11 +68,13 @@ The center of the ops console. Keep it deliberate and dark, not busy.
 - Postprocessing: bloom only, modest intensity. Cap DPR at 1.5. `frameloop="demand"` when no incident is active; invalidate on events. Pause entirely when the tab is hidden.
 - Fault moment: the affected node flashes, edges to it turn red, a brief camera ease-in toward it (no wild camera moves; one gentle move per incident).
 
-Fallback: on WebGL context failure, or `?view=2d`, or reduced motion, render the React Flow version: same layout, same colors, CSS pulse on edges. The fallback is a first-class build target in phase 4; the 3D scene in phase 5 layers on top of the same state selector. Both consume one `useTopologyState()` hook so they can never drift.
+Fallback: on WebGL context failure, or `?view=2d`, or reduced motion, render the React Flow version: same layout, same colors, CSS pulse on edges. If a reduced-motion user forces 3D with `?view=3d`, the scene mounts but renders static: no idle ticker, no ambient pulse, frames render only on state changes (defect 6 in docs/reports/FINAL_VERIFICATION.md). The fallback is a first-class build target in phase 4; the 3D scene in phase 5 layers on top of the same state selector. Both consume one `useTopologyState()` hook so they can never drift.
 
 ## Frontend data layer
 
 - One WebSocket connection (reconnecting, exponential backoff) feeding a Zustand store; all components select from the store.
+- On connect (and reconnect) the store seeds itself from REST before live-tailing: open incidents, plus the full event log for any incident in awaiting_approval, so a parked approval renders after a page reload (defect 5 in docs/reports/FINAL_VERIFICATION.md). Seeding lives in the store layer; components still never fetch live data themselves.
+- The approval drawer takes initial focus on mount and traps focus while open (role=alertdialog semantics).
 - Replay mode swaps the store's source from live WS to the fetched event array; components are unaware.
 - Server components for initial fetches; everything live is client-side from the store.
 - No polling anywhere except the metrics page (30s refresh).

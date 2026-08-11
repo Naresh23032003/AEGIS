@@ -18,6 +18,7 @@ Contents:
 - [5. UI walkthrough](#5-ui-walkthrough)
 - [6. Evidence pack](#6-evidence-pack)
 - [Verdict](#verdict)
+- [Phase 7 addendum](#phase-7-addendum)
 
 ## 0. Post-review fixes
 
@@ -898,15 +899,18 @@ heal.
 
 ### Defects found
 
-| #   | Severity | What                                                                                                                                                                               | Status |
-| --- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| 5   | high     | A parked red-tier approval is invisible after a page reload; no approve control exists outside the live-only overlay                                                               | open   |
-| 3   | high     | Incidents re-open every 5s while a fault is active (60 in one 9-minute live run); 79% of the daily token budget goes to escalating duplicates, which is what stops `make e2e-live` | open   |
-| 2   | medium   | A clean clone could not run `make e2e`; `make venv` never installed `apps/core`, and CI hid it with a private step                                                                 | fixed  |
-| 4   | medium   | `?view=2d` was dropped by the chaos panel's push and by the nav links                                                                                                              | fixed  |
-| 1   | low      | README named an **inject: latency** button that does not exist on the chaos screen                                                                                                 | fixed  |
-| 6   | low      | The 3D scene forced on with `?view=3d` ignores prefers-reduced-motion                                                                                                              | open   |
-| 7   | low      | `&mdash;` in the evidence-pack source rendered a real em dash into every PDF, invisible to the repo-wide grep                                                                      | fixed  |
+Statuses updated by phase 7; see the [phase 7 addendum](#phase-7-addendum)
+for the code and the pasted output behind each of the three that changed.
+
+| #   | Severity | What                                                                                                                                                                               | Status          |
+| --- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| 5   | high     | A parked red-tier approval is invisible after a page reload; no approve control exists outside the live-only overlay                                                               | fixed (phase 7) |
+| 3   | high     | Incidents re-open every 5s while a fault is active (60 in one 9-minute live run); 79% of the daily token budget goes to escalating duplicates, which is what stops `make e2e-live` | fixed (phase 7) |
+| 2   | medium   | A clean clone could not run `make e2e`; `make venv` never installed `apps/core`, and CI hid it with a private step                                                                 | fixed           |
+| 4   | medium   | `?view=2d` was dropped by the chaos panel's push and by the nav links                                                                                                              | fixed           |
+| 1   | low      | README named an **inject: latency** button that does not exist on the chaos screen                                                                                                 | fixed           |
+| 6   | low      | The 3D scene forced on with `?view=3d` ignores prefers-reduced-motion                                                                                                              | fixed (phase 7) |
+| 7   | low      | `&mdash;` in the evidence-pack source rendered a real em dash into every PDF, invisible to the repo-wide grep                                                                      | fixed           |
 
 ### Fixes committed
 
@@ -925,6 +929,11 @@ the same provisioning a clean clone gets. `18677df` adds three cases to
 `apps/console/app/lib/viewParam.test.ts`.
 
 ### Left open, and why
+
+All three were closed by phase 7; this section is what that pass was
+handed, kept as written. The decisions it asks for were made in the
+amended plan/03 and plan/05, and the work is in the
+[phase 7 addendum](#phase-7-addendum).
 
 - **Defect 5 (parked approval invisible after reload).** Both candidate
   fixes are design changes: a backfill handshake on `/ws/events`, or a REST
@@ -997,3 +1006,298 @@ the evidence: the failure was in the report's own markdown, not in the code.
   the day; the original file is backed up outside the repo.
 - The stack is up in fixture mode (`MOCK_LLM=1`). `make down` clears it,
   including the incident rows this pass generated.
+
+## Phase 7 addendum
+
+Run on 2026-08-07, branch `phase-7` off `phase-6`, same machine and stack
+as the rest of this report. Phase 7 closes defects 3, 5 and 6 against the
+amended specs in plan/03-agents-and-policy.md (Detection) and
+plan/05-frontend.md (Fallback, Frontend data layer). Every command output
+below is pasted from the run.
+
+The e2e suite goes from 15 tests to 18: one per fixed defect.
+
+### Defect 3, one incident per (rule, service) per firing episode
+
+`aegis.detection.loop` no longer decides by SQL status. `DetectionState`
+carries an `episode_open` set of (rule, service) pairs, an incident sets
+the flag, and only a clean evaluation of that rule clears it, so an
+incident that escalates a second after opening keeps suppressing its own
+episode for as long as the metric stays over threshold.
+`rebuild_episode_state()` reloads the flags from the incidents table
+before the first poll, skipping resolved rows because a resolution already
+implies verify probes came back clean:
+
+```
+$ docker logs aegis-core-worker-1 | grep episodes
+2026-08-07 05:00:19,376 worker detection: 6 firing episodes rebuilt from the incidents table
+```
+
+Six unit cases drive the loop's own poll path with a stubbed Prometheus,
+counting openings rather than asserting on a predicate string:
+
+```
+$ .venv/bin/python -m pytest apps/core/tests/test_detection.py -q
+......                                                                   [100%]
+6 passed in 0.08s
+```
+
+The e2e holds error_spike past detection for 60 more seconds, counts
+incidents per pair over the window, then re-injects after the rate()[1m]
+window has rolled off to prove a second episode still opens its own
+incident:
+
+```
+$ MOCK_LLM=1 .venv/bin/python -m pytest e2e/test_detection_episodes.py -q
+.                                                                        [100%]
+1 passed in 198.36s (0:03:18)
+```
+
+What it looks like in the incident table. Before, from section 2 of this
+report, one pair over six minutes of a fixture run:
+
+```
+error_rate/target-gateway: 47 incidents, 02:27:17.821Z .. 02:33:34.021Z
+```
+
+After, the same rule and service across the whole 19m05s fixture suite,
+which injects error_spike four separate times: four incidents, one per
+injection.
+
+### Defect 5, a parked approval after a page reload
+
+The Zustand store now seeds itself from REST on connect and on every
+reconnect: `listIncidents`, filtered to the three non-terminal statuses,
+then the full event log of each. `mergeSeed` drops anything the socket
+already delivered by event id and puts the rest in front of the live
+events, so an incident's own slice stays in seq order and the REST/WS
+overlap folds identically either way. `ApprovalOverlays` is unchanged; it
+selects the same events it always did, there are just events to select
+now. The drawer also takes initial focus on mount and traps Tab, instead
+of sitting at the end of the tab order behind the whole incident feed.
+
+```
+$ npx vitest run app/store/events.test.ts app/components/ApprovalDrawer.test.tsx
+ Test Files  2 passed (2)
+      Tests  10 passed (10)
+```
+
+The e2e parks a real red-tier action at a LangGraph `interrupt()`, waits
+for the drawer to appear live, reloads the page, and approves from the
+drawer the seed brings back. `/ws/events` still tails Redis from `$` with
+no backfill, so nothing but the seed can put that drawer back:
+
+```
+$ MOCK_LLM=1 .venv/bin/python -m pytest e2e/test_approval_reload.py -q
+.                                                                        [100%]
+1 passed in 7.93s
+```
+
+The assertions after the click read the event log, not the screen: the
+approval is signed by a `human:` actor, carries the seeded action id, is
+followed by `action.executed`, and the chain still verifies. The drawer's
+own "approved, signed <fingerprint>" line is deliberately not what the
+test waits on; section 5 of this report measured it on screen for about a
+second, so the stable signal is the drawer unmounting.
+
+### Defect 6, the forced 3D scene under reduced motion
+
+`Topology3D` reads `useReducedMotion()` and passes it down as `still`.
+The frameloop collapses to `demand` even with an incident active, the
+5fps `IdleTicker` never starts, the edge dash offset holds, the agent orb
+parks at a fixed point on its orbit instead of circling it, the node
+flash is skipped and the camera jumps to its resting pose in one frame.
+Frames are then only drawn when the topology state actually changes.
+
+```
+$ MOCK_LLM=1 .venv/bin/python -m pytest e2e/test_reduced_motion.py -q
+.                                                                        [100%]
+1 passed in 18.36s
+```
+
+The check is three parts: reduced motion with no override still lands on
+the 2D renderer with zero running Web Animations; `?view=3d` under
+reduced motion produces byte-identical canvas screenshots across a 4s
+idle gap; and a control run of the same scene with no preference set
+produces different ones. Without the control, "identical pixels" would
+also be what a canvas that failed to render at all produces.
+
+### What the episode rule changed in the suite
+
+The first full re-run came back 16/18. `test_latency_heals` waited 90s
+for an incident that was never going to open:
+
+```
+E       TimeoutError: no incident for latency_p95/target-orders within 90s
+FAILED e2e/test_reduced_motion.py::test_forced_3d_holds_still_under_reduced_motion
+FAILED e2e/test_scenarios.py::test_latency_heals - TimeoutError: no incident ...
+2 failed, 16 passed in 904.34s (0:15:04)
+```
+
+Both failures are the suite's own ordering, and both are worth recording
+because they are the cost of the amended rule rather than bugs in it.
+`test_evidence_pack` injects latency, heals it and clears the toxic at
+05:23:1x; `test_latency_heals` re-injects 20s later. p95 never dipped
+below threshold in between, so by plan/03's wording that is one continuous
+firing episode and the second injection correctly shares the first
+incident. The reduced-motion check failed for the neighbouring reason:
+`latency_p95` on target-gateway was still resolving while it sampled, and
+a running incident repaints the scene for real reasons.
+
+Fixed in the tests, not in the rule. An autouse fixture waits for both
+threshold rules to read clean before each test, using detection's own
+rules.yaml and `query_prometheus` from inside core-api rather than a
+second copy of the PromQL, and the reduced-motion check additionally waits
+for no incident to be in flight. The pair that failed, run back to back:
+
+```
+$ MOCK_LLM=1 .venv/bin/python -m pytest e2e/test_evidence_pack.py e2e/test_scenarios.py::test_latency_heals -q
+..
+2 passed in 142.54s (0:02:22)
+```
+
+### Full re-verify
+
+```
+### make lint test 2026-08-07T06:17:57Z
+All checks passed!                            (ruff)
+Success: no issues found in 51 source files   (mypy)
+53 passed, 2 warnings in 0.77s                (pytest apps/core)
+ Test Files  8 passed (8)
+      Tests  46 passed (46)                   (vitest, console)
+PASS: 9/9                                     (opa test)
+### exit=0
+```
+
+apps/core goes from 47 tests to 53 and the console from 36 to 46.
+
+```
+### fixture e2e start 2026-08-07T05:36:00Z
+.venv/bin/python -m playwright install chromium
+.venv/bin/python -m pytest e2e -q
+..................                                                       [100%]
+18 passed in 1145.13s (0:19:05)
+### fixture e2e end 2026-08-07T05:55:08Z
+```
+
+`make e2e` now installs the Chromium binary first (Makefile, `browsers`
+target), because two of the three new tests only exist in a browser and
+the pip wheel carries no browser. Same reasoning as the `make venv` gap
+the stranger test found in section 2: a clean clone must not collect tests
+it cannot run. CI gets one added step for the shared libraries, which are
+the only part needing root.
+
+### Live e2e: still not a clean run, and this time the budget was gone first
+
+```
+### live e2e start 2026-08-07T05:56:07Z LLM_LARGE=llama-3.3-70b-versatile
+MOCK_LLM=0 .venv/bin/python -m pytest e2e -q
+FAILED e2e/test_approvals.py::test_veto_during_the_window_escalates_instead_of_healing
+FAILED e2e/test_checkpoint_resume.py::test_killing_worker_mid_run_resumes_from_checkpoint
+FAILED e2e/test_scenarios.py::test_latency_heals - AssertionError: {'id': 'in...
+FAILED e2e/test_scenarios.py::test_crash_heals - AssertionError: {'id': 'inc_...
+FAILED e2e/test_scenarios.py::test_error_spike_heals - AssertionError: {'id':...
+FAILED e2e/test_scenarios.py::test_memory_leak_heals - AssertionError: {'id':...
+FAILED e2e/test_scenarios.py::test_cache_outage_heals - AssertionError: {'id'...
+7 failed, 11 passed in 1199.86s (0:19:59)
+### live e2e end 2026-08-07T06:16:10Z
+```
+
+Every failure is the same 429, and the counter inside it is the point:
+
+```
+on tokens per day (TPD): Limit 100000, Used 99658
+```
+
+99,658 of 100,000 were already spent when this run started. The key is
+the second one, the one section 3 introduced fresh at 04:06Z and then
+spent 135,069 tokens on inside nine minutes. Tokens on this stack's
+`agent_runs` rows, split at the moment `make e2e-live` started:
+
+```
+this live run : {'ti': 15151, 'tout': 1034, 'n': 22}      (16,185 tokens)
+earlier today : {'ti': 277153, 'tout': 21726, 'n': 2093}  (298,879 tokens)
+```
+
+So this pass could not test the prediction it was meant to test. The
+brief's instruction for exactly this case was to stop and report rather
+than substitute a model, and no model was substituted:
+`LLM_LARGE=llama-3.3-70b-versatile` throughout, the committed default.
+
+What the run does measure is volume, because a 429 escalation is the same
+shape of failure the storm fed on: an incident that dies immediately while
+its fault keeps firing. Section 3's pre-fix run, nine minutes, 60
+incidents opened, 49 escalated. This run, twice as long, with 23 of 30
+incidents escalating on 429:
+
+```
+incidents opened during the 19m59s live run: 30
+    8  ('error_rate', ('target-gateway',), 'escalated')
+    7  ('synthetic', (), 'resolved')
+    5  ('error_rate', ('target-payments',), 'escalated')
+    3  ('latency_p95', ('target-orders',), 'escalated')
+    3  ('latency_p95', ('target-gateway',), 'escalated')
+    3  ('service_down', ('target-payments',), 'escalated')
+    1  ('error_rate', ('target-orders',), 'escalated')
+
+escalated: 23  resolved: 7
+live run agent runs: {'ti': 28013, 'tout': 1926, 'cost': 0.00662, 'n': 59}
+```
+
+Read those repeats carefully: they are one per injection, not one per
+poll. Eight `error_rate` incidents on target-gateway across twenty minutes
+are eight separate faults injected by different tests, each after the
+metric had decayed clean; the pre-fix run's 19 came from a single fault
+re-opening every five seconds. 59 agent runs against the pre-fix run's
+157, over twice the wall clock.
+
+That is consistent with section 3's prediction that fixing defect 3 puts
+the suite inside a free-tier day, and it is not a confirmation of it. A
+clean `make e2e-live` still needs a key with an unspent daily budget.
+
+### README numbers: not refreshed, and why
+
+Step 5 of the phase 7 brief asks for three fresh samples each of
+error_spike and cache_outage from `scripts/collect_live_numbers.py`, to
+replace the two rows section 3 left unchecked. That needs the same live
+budget the suite just failed on, so it was not run and no number in the
+README moved. The table still carries the phase 6 measurements and its
+`cache_outage (n=1)` caveat, which remain the last real runs behind them.
+`collect_live_numbers.py` did gain a `--scenarios` flag so the top-up is a
+two-scenario run rather than a fifteen-run one when a budget exists.
+
+The one part of step 5 that needed no tokens was done. The README's
+quickstart wording, read off the running chaos screen rather than the
+source:
+
+```
+card title text : 'LATENCY'
+card title css  : uppercase
+button label    : 'inject fault'
+cards on screen : 5
+all button texts: ['inject fault', 'inject fault', 'inject fault', 'inject fault', 'inject fault']
+```
+
+The README says press **inject fault** on the **latency** card, which is
+what is on screen (the card's source text is `latency`; the capitals are
+CSS). Defect 1 stays closed.
+
+### State this addendum leaves behind
+
+- Branch `phase-7` off `phase-6`, tagged `phase-7`. Nothing pushed, no
+  remote touched, `v0.1.0` not tagged. The release decision is still the
+  reviewer's, and one of its inputs, a clean `make e2e-live`, is still
+  unmeasured.
+- `.env` back to `MOCK_LLM=1` and the committed default model, never
+  staged, verified against `.env.example`:
+
+```
+$ diff <(redact .env) <(redact .env.example)
+identical to .env.example apart from the redacted secret
+```
+
+- The stack is up in fixture mode. `make down` clears it, including the
+  incident rows this pass generated.
+- No separate `docs/reports/PHASE_7_REPORT.md` exists: the phase 7 brief
+  names this addendum as the phase report. `scripts/gate.sh 7` would fail
+  its report-exists check for that reason, and was not run.

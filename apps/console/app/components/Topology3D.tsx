@@ -21,6 +21,7 @@ import * as THREE from "three";
 import { RoundedBoxGeometry, type Line2 } from "three-stdlib";
 import { Bot, Database, Server } from "lucide-react";
 
+import { useReducedMotion } from "../hooks/useReducedMotion";
 import {
   useTopologyState,
   type NodeStatus,
@@ -75,6 +76,14 @@ interface Topology3DProps {
 
 export function Topology3D({ onFailure }: Topology3DProps) {
   const { nodes, edges, agents } = useTopologyState();
+  // TopologyRenderer routes a reduced-motion user to the 2D fallback, so
+  // this is only ever true when they overrode it with ?view=3d. plan/05,
+  // Fallback: "the scene mounts but renders static: no idle ticker, no
+  // ambient pulse, frames render only on state changes." Before this the
+  // forced scene animated exactly like the unforced one (defect 6,
+  // docs/reports/FINAL_VERIFICATION.md), which the preference forbids
+  // whatever route the user took to get here.
+  const reducedMotion = useReducedMotion();
   const [tabHidden, setTabHidden] = useState(false);
   const [showPerf, setShowPerf] = useState(false);
   const [fps, setFps] = useState<number | null>(null);
@@ -101,9 +110,11 @@ export function Topology3D({ onFailure }: Topology3DProps) {
   // choreography, camera ease); otherwise "demand" plus a slow 5fps
   // invalidate ticker (IdleTicker, below) keeps the ambient traffic pulse
   // visibly flowing without paying for a continuous 60fps idle render.
+  // Reduced motion collapses both cases to "demand" with no ticker, so a
+  // frame is only ever drawn when the topology state actually changed.
   const frameloop: "never" | "always" | "demand" = tabHidden
     ? "never"
-    : hasActiveIncident
+    : hasActiveIncident && !reducedMotion
       ? "always"
       : "demand";
 
@@ -141,16 +152,16 @@ export function Topology3D({ onFailure }: Topology3DProps) {
           fadeStrength={1.2}
         />
 
-        <TopologyNodes nodes={nodes} />
-        <TopologyEdges edges={edges} />
+        <TopologyNodes nodes={nodes} still={reducedMotion} />
+        <TopologyEdges edges={edges} still={reducedMotion} />
         <TopologyLabels nodes={nodes} />
         {agents.map((orb, i) => (
-          <AgentOrb key={orb.agent} orb={orb} index={i} />
+          <AgentOrb key={orb.agent} orb={orb} index={i} still={reducedMotion} />
         ))}
         <CoreMarker />
 
-        <FaultCamera nodes={nodes} />
-        <IdleTicker idle={frameloop === "demand"} />
+        <FaultCamera nodes={nodes} still={reducedMotion} />
+        <IdleTicker idle={frameloop === "demand" && !reducedMotion} />
         {showPerf && <FpsMeter onSample={setFps} />}
 
         <EffectComposer multisampling={0}>
@@ -193,7 +204,7 @@ export function Topology3D({ onFailure }: Topology3DProps) {
  * into the base color channel, not emissive; a real per-instance emissive
  * would need a hand-patched shader for five boxes, not worth the
  * complexity here). */
-function TopologyNodes({ nodes }: { nodes: TopologyNode[] }) {
+function TopologyNodes({ nodes, still }: { nodes: TopologyNode[]; still: boolean }) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const geometry = useMemo(() => new RoundedBoxGeometry(...NODE_SIZE, 2, 0.12), []);
   const material = useMemo(
@@ -214,6 +225,7 @@ function TopologyNodes({ nodes }: { nodes: TopologyNode[] }) {
     if (!mesh) return;
     nodes.forEach((node, i) => {
       if (
+        !still &&
         prevStatus.current[node.id] &&
         prevStatus.current[node.id] !== "faulted" &&
         node.status === "faulted"
@@ -226,7 +238,7 @@ function TopologyNodes({ nodes }: { nodes: TopologyNode[] }) {
       mesh.setColorAt(i, tmpColor);
     });
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-  }, [nodes, tmpColor]);
+  }, [nodes, still, tmpColor]);
 
   useFrame(() => {
     const mesh = meshRef.current;
@@ -297,17 +309,17 @@ function TopologyLabels({ nodes }: { nodes: TopologyNode[] }) {
   );
 }
 
-function TopologyEdges({ edges }: { edges: TopologyEdge[] }) {
+function TopologyEdges({ edges, still }: { edges: TopologyEdge[]; still: boolean }) {
   return (
     <>
       {edges.map((edge) => (
-        <PulseEdge key={edge.id} edge={edge} />
+        <PulseEdge key={edge.id} edge={edge} still={still} />
       ))}
     </>
   );
 }
 
-function PulseEdge({ edge }: { edge: TopologyEdge }) {
+function PulseEdge({ edge, still }: { edge: TopologyEdge; still: boolean }) {
   const points = useMemo<[number, number, number][]>(() => {
     const from = NODE_POSITIONS[edge.source] ?? [0, 0, 0];
     const to = NODE_POSITIONS[edge.target] ?? [0, 0, 0];
@@ -320,6 +332,10 @@ function PulseEdge({ edge }: { edge: TopologyEdge }) {
   const speed = TRAFFIC_SPEED[edge.trafficLevel] * (edge.faulted ? 2.2 : 1);
 
   useFrame((_, delta) => {
+    // The dashes are the ambient traffic pulse. Under reduced motion they
+    // keep their starting offset, so a state-change repaint redraws the
+    // same line rather than advancing it.
+    if (still) return;
     const material = lineRef.current?.material;
     if (!material) return;
     material.dashOffset -= delta * speed;
@@ -350,7 +366,7 @@ const ORB_TMP = new THREE.Vector3();
  * the parent map, so a genuinely new agent starts fresh at the AEGIS core
  * and glides out; the same agent staying active across renders keeps its
  * orbit uninterrupted. */
-function AgentOrb({ orb, index }: { orb: TopologyAgentOrb; index: number }) {
+function AgentOrb({ orb, index, still }: { orb: TopologyAgentOrb; index: number; still: boolean }) {
   const target = NODE_POSITIONS[orb.targetNodeId] ?? [0, 0, 0];
   const ref = useRef<THREE.Mesh>(null);
   const current = useRef(new THREE.Vector3(...CORE_POSITION));
@@ -358,15 +374,21 @@ function AgentOrb({ orb, index }: { orb: TopologyAgentOrb; index: number }) {
   useFrame((state, delta) => {
     const mesh = ref.current;
     if (!mesh) return;
-    const t = state.clock.elapsedTime * 1.4 + index * 1.9;
+    // Reduced motion drops the clock term: the orb still says which node
+    // the agent is working on, it just parks at one point on the orbit
+    // instead of circling it.
+    const t = still ? index * 1.9 : state.clock.elapsedTime * 1.4 + index * 1.9;
     const radius = 0.85;
     ORB_TMP.set(
       target[0] + Math.cos(t) * radius,
       NODE_Y + 0.55 + Math.sin(t * 1.6) * 0.07,
       target[2] + Math.sin(t) * radius,
     );
-    const alpha = 1 - Math.pow(0.0025, delta);
-    current.current.lerp(ORB_TMP, alpha);
+    if (still) {
+      current.current.copy(ORB_TMP);
+    } else {
+      current.current.lerp(ORB_TMP, 1 - Math.pow(0.0025, delta));
+    }
     mesh.position.copy(current.current);
   });
 
@@ -385,11 +407,10 @@ function CoreMarker() {
 }
 
 /** One gentle camera ease-in toward the fault, then it holds -- plan/05:
- * "no wild camera moves; one gentle move per incident." Only mounted
- * while Topology3D itself is mounted, which only happens when reduced
- * motion is off (TopologyRenderer routes reduced motion to the 2D
- * fallback), so this never needs its own reduced-motion check. */
-function FaultCamera({ nodes }: { nodes: TopologyNode[] }) {
+ * "no wild camera moves; one gentle move per incident." `still` cuts the
+ * ease: the camera jumps to the same resting place in a single frame, so
+ * a reduced-motion viewer sees the fault framed without the move. */
+function FaultCamera({ nodes, still }: { nodes: TopologyNode[]; still: boolean }) {
   const { camera } = useThree();
   const lookAt = useRef(REST_CAMERA_TARGET.clone());
   const desiredPos = useMemo(() => new THREE.Vector3(), []);
@@ -405,9 +426,14 @@ function FaultCamera({ nodes }: { nodes: TopologyNode[] }) {
       desiredTarget.copy(REST_CAMERA_TARGET);
       desiredPos.copy(REST_CAMERA_POSITION);
     }
-    const alpha = 1 - Math.pow(0.001, delta);
-    camera.position.lerp(desiredPos, alpha);
-    lookAt.current.lerp(desiredTarget, alpha);
+    if (still) {
+      camera.position.copy(desiredPos);
+      lookAt.current.copy(desiredTarget);
+    } else {
+      const alpha = 1 - Math.pow(0.001, delta);
+      camera.position.lerp(desiredPos, alpha);
+      lookAt.current.lerp(desiredTarget, alpha);
+    }
     camera.lookAt(lookAt.current);
   });
 
@@ -419,7 +445,8 @@ function FaultCamera({ nodes }: { nodes: TopologyNode[] }) {
  * times (plan/05: edges show a "slow animated pulse traveling in the
  * traffic direction" independent of incidents), so idle mode nudges a
  * repaint at 5fps instead of 60fps -- visibly alive, a twelfth of the
- * idle render cost. */
+ * idle render cost. Under reduced motion the caller passes idle=false and
+ * this never starts, which is what makes the forced scene hold still. */
 function IdleTicker({ idle }: { idle: boolean }) {
   const invalidate = useThree((s) => s.invalidate);
   useEffect(() => {
