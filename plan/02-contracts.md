@@ -40,7 +40,6 @@ Rules: `id` is a ULID. `actor` is namespaced as shown. `payload` shape is define
 | action.rejected | api | action_id, approver_pubkey, signature, reason |
 | action.executed | executor | action_id, result, duration_ms |
 | action.rolled_back | executor | action_id, rollback_of |
-| verify.started | verification agent | probes |
 | verify.passed | verification agent | evidence |
 | verify.failed | verification agent | evidence, loop_count |
 | incident.resolved | worker | mttr_seconds, autonomy (auto/approved/escalated), actions_taken |

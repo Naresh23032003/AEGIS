@@ -264,7 +264,10 @@ def _build_pdf(data: dict[str, Any]) -> bytes:
     story.append(Paragraph("AEGIS evidence pack", _H1))
     story.append(
         Paragraph(
-            f"Incident {incident['id']} &mdash; generated for record-keeping and human "
+            # No em dash, per CLAUDE.md's writing rules. `&mdash;` here rendered
+            # a real one into every generated PDF while the repo-wide em dash
+            # grep stayed green, since the source only ever held the entity.
+            f"Incident {incident['id']}, generated for record-keeping and human "
             "oversight review. Not a compliance certificate.",
             _SUBTITLE,
         )

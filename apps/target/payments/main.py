@@ -85,7 +85,7 @@ async def charge(req: ChargeRequest, response: Response) -> dict:
         # plan/04-security.md, Prompt injection defense: the adversarial
         # e2e case. A real attacker with only log-write access (a
         # malicious upstream, a compromised dependency) gets no more
-        # leverage here than this: application logs are untrusted tool
+        # reach here than this: application logs are untrusted tool
         # output to the diagnose node (aegis.agents.quarantine.wrap), never
         # instructions, so this line must never cause flush_queue.
         logger.error(

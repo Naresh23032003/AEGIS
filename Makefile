@@ -15,6 +15,13 @@ venv:
 	$$PYBIN -m venv .venv
 	$(PIP) install --upgrade pip -q
 	$(PIP) install -r requirements-dev.txt -q
+	# The e2e suite imports the aegis package directly (test_evidence_pack.py
+	# recomputes the chain with aegis.chain.next_hash) and signs approvals with
+	# PyNaCl, an apps/core dependency. requirements-dev.txt carries neither, so
+	# without this a clean clone collects 2 import errors on `make e2e`. CI had
+	# its own `pip install -e apps/core` step and so never saw it; the final
+	# verification stranger test did.
+	$(PIP) install -e apps/core -q
 
 env:
 	[ -f .env ] || cp .env.example .env

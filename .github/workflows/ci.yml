@@ -18,10 +18,10 @@ jobs:
         with:
           node-version: "22"
 
+      # No extra `pip install -e apps/core` here on purpose: `make venv` owns
+      # that now, so CI exercises the same provisioning a clean clone gets.
       - name: Install Python dev tooling
-        run: |
-          make venv
-          .venv/bin/pip install -e apps/core
+        run: make venv
 
       - name: Install Node dependencies
         run: npm ci
