@@ -226,6 +226,40 @@ describe("foldIncidentEvents", () => {
     expect(view.status).toBe("escalated");
     expect(view.escalation).toEqual({ reason: "loop_count exceeded max 3", loopsExhausted: true });
   });
+
+  it("keeps the diagnosis confidence separate from the action's own", () => {
+    const events: EventEnvelope[] = [
+      ev("action.proposed", {
+        action_id: "act_1",
+        catalog_key: "restart_service",
+        params: { service: "target-gateway" },
+        tier: "green",
+        confidence: 0.8,
+        diagnosis_confidence: 0.0,
+        reasoning: "r",
+        rollback_key: null,
+      }),
+    ];
+    const view = foldIncidentEvents("inc_1", undefined, events);
+    expect(view.actions["act_1"]!.confidence).toBe(0.8);
+    expect(view.actions["act_1"]!.diagnosisConfidence).toBe(0);
+  });
+
+  it("leaves diagnosisConfidence undefined on an action.proposed that predates the field", () => {
+    const events: EventEnvelope[] = [
+      ev("action.proposed", {
+        action_id: "act_1",
+        catalog_key: "restart_service",
+        params: {},
+        tier: "green",
+        confidence: 0.8,
+        reasoning: "r",
+        rollback_key: null,
+      }),
+    ];
+    const view = foldIncidentEvents("inc_1", undefined, events);
+    expect(view.actions["act_1"]!.diagnosisConfidence).toBeUndefined();
+  });
 });
 
 describe("foldAllIncidents", () => {

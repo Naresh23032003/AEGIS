@@ -1,3 +1,14 @@
+// Both confidences are shown, labelled. The card used to render only the
+// action's own number under a bare "confidence", which read as the
+// system's confidence in the whole incident. On
+// error_spike_target-gateway the diagnosis sits at 0.0 and the action at
+// 0.8; a viewer who saw one number saw the flattering one.
+//
+// Both guards are `!= null`, not truthiness: 0.0 is a real answer (the
+// model restated the symptom instead of naming a cause) and has to render
+// as `diagnosis 0%`. It carries text-secondary like every other field
+// here, so zero looks like a measurement rather than a failed read.
+
 import type { ActionView } from "../lib/fold";
 
 const TIER_COLOR: Record<string, string> = {
@@ -44,9 +55,18 @@ export function ActionCard({ action }: { action: ActionView }) {
       <p style={{ color: "var(--aegis-text-secondary)" }}>
         {STATUS_LABEL[action.status] ?? action.status}
       </p>
-      {action.confidence != null && (
-        <p className="font-mono-data" style={{ color: "var(--aegis-text-secondary)" }}>
-          confidence {(action.confidence * 100).toFixed(0)}%
+      {(action.diagnosisConfidence != null || action.confidence != null) && (
+        <p className="flex gap-3 font-mono-data" style={{ color: "var(--aegis-text-secondary)" }}>
+          {action.diagnosisConfidence != null && (
+            <span data-testid="diagnosis-confidence">
+              diagnosis {(action.diagnosisConfidence * 100).toFixed(0)}%
+            </span>
+          )}
+          {action.confidence != null && (
+            <span data-testid="action-confidence">
+              action {(action.confidence * 100).toFixed(0)}%
+            </span>
+          )}
         </p>
       )}
       {action.reasoning && (

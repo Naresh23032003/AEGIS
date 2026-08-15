@@ -1,6 +1,6 @@
 # AEGIS
 
-![AEGIS console: a crashed service is detected, diagnosed, fixed and verified, with every step written to a hash-chained log](docs/media/demo.gif)
+![AEGIS console: a stopped service is detected, diagnosed from metrics and logs, restarted and verified in 7 seconds; then an injected latency fault gets a restart that does nothing to it, and the incident closes with the fault still installed and the summary saying so](docs/media/demo.gif)
 
 AEGIS is a self-healing incident operations platform. It watches a real
 three-service system, detects injected faults with a plain rules engine,
@@ -30,10 +30,17 @@ its own `.venv` and npm workspace deps, builds the stack, and brings every
 container up healthy, typically inside 2 minutes on a warm build cache.
 
 Open <http://localhost:3000>, go to **chaos**, and press **inject fault**
-on the **crash** card. That is the run in the GIF above: the topology
-turns the stopped service red, an incident card appears about 13 seconds
-later when detection fires, and the heal itself took 7 seconds. `make
-down` tears it all down.
+on the **crash** card. That is the first act of the GIF above: the
+topology turns the stopped service red, an incident card appears 13
+seconds later when detection fires, and the heal itself took 7 seconds.
+
+The second act is the **latency** card, and it is there because it does
+not work. The agent proposes `restart_service` for a fault that is a
+Toxiproxy toxic, restarting a service that was never down. The incident
+closes 13 seconds after detection with the toxic still installed, and the
+summary says so. Both acts come from one `make demo` run on fixtures; see
+[What this is not](#what-this-is-not) for why the second one closes at
+all. `make down` tears it all down.
 
 ## How it works
 
@@ -78,9 +85,10 @@ canonical_json(envelope))`, written in the same transaction as the row it
   apply from December 2027, and this shows the runtime evidence shape
   early, not certification.
 
-## Measured results
+## Measured results on gpt-oss-120b, gpt-oss-20b and qwen3.6-27b
 
-Three live runs per scenario against the real Groq API, pasted from
+Not the model running now. Three live runs per scenario against the real
+Groq API on that model set, pasted from
 [PHASE_6_REPORT.md](docs/reports/PHASE_6_REPORT.md):
 
 | Scenario           | Autonomy | MTTR (avg) | Cost/incident | Action                     |
@@ -91,9 +99,9 @@ Three live runs per scenario against the real Groq API, pasted from
 | memory_leak        | auto     | 21s        | $0.0019       | `restart_service` (green)  |
 | cache_outage (n=1) | auto     | 136s       | $0.0023       | `remove_toxic` (green)     |
 
-**Read that table with the caveat below.** It was produced on a different
-model set (`openai/gpt-oss-120b`, `gpt-oss-20b`, `qwen3.6-27b`). On the
-current model none of the five reproduces inside 20%.
+On the current model none of the five reproduces inside 20%, and `latency`
+does not heal at all. Read the table as a record of what that model set
+did, not as what this repo does today.
 
 Fixture runs (`MOCK_LLM=1`, deterministic, no API key) heal four of the
 five in well under a minute each. That is the mode CI and the quickstart
@@ -124,10 +132,19 @@ sounding like it is.
 **`latency` no longer heals.** With the toxic's name gone from the prompt
 the model proposes `restart_service`, which does nothing to a Toxiproxy
 toxic, and the incident closes with the fault installed. It closes because
-verification never compares p95 against its threshold: the probe reported
+p95 is never compared against a threshold at all, and the reason is a
+two-word mismatch. In
+[rules.yaml](apps/core/aegis/detection/rules.yaml) the query is keyed
+`p95_latency`; the rule that uses it has the id `latency_p95`. In
+[tools.py](apps/core/aegis/agents/tools.py), line 309 builds the threshold
+map keyed by **rule id**, line 320 iterates the **query keys**, so
+`thresholds.get("p95_latency")` returns `None` and the comparison on line
+328 is skipped for every latency reading ever taken. The probe reported
 10,000ms against a 1,000ms limit and still returned `all_healthy: true`.
-That bug has been there since phase 2 and is why `test_latency_heals`
-fails.
+
+`error_rate` escapes this only because its rule id and its query key are
+the same string. Latency has gone unchecked since phase 2, and that is why
+`test_latency_heals` fails. It is left in, failing, on purpose.
 
 Two things survive that. Verification separately re-checks whether the
 injected fault is still in place, so those incidents carry `[injected

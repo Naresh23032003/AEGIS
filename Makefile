@@ -1,5 +1,5 @@
 .PHONY: up down contracts contracts-python contracts-ts test test-python test-ts opa-test \
-        e2e e2e-live record-fixtures lint lint-python lint-ts venv env node-modules browsers
+        e2e e2e-live record-fixtures demo lint lint-python lint-ts venv env node-modules browsers
 
 COMPOSE := docker compose -f deploy/docker-compose.yml
 PY := .venv/bin/python
@@ -93,3 +93,10 @@ e2e-live: browsers
 
 record-fixtures:
 	$(PY) scripts/record_fixtures.py $(SCENARIO)
+
+# demo: re-records docs/media/demo.gif and demo.mp4 against a stack that is
+# already up (`MOCK_LLM=1 make up` first; the script refuses to run if
+# core-worker is not on fixtures). Injects two real faults and clears them
+# again, so do not point it at anything but the demo target stack.
+demo: browsers
+	$(PY) scripts/record_demo.py

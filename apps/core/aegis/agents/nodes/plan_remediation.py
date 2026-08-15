@@ -49,6 +49,7 @@ async def plan_remediation(state: AgentState) -> dict[str, Any]:
     )
     plan: PlanRemediationResult = result.answer  # type: ignore[assignment]
 
+    diagnosis_confidence = state.get("confidence")
     proposals: list[dict[str, Any]] = []
     for proposed in plan.actions:
         try:
@@ -86,7 +87,15 @@ async def plan_remediation(state: AgentState) -> dict[str, Any]:
                 incident_id=incident_id,
                 type="action.proposed",
                 actor="agent:remediation",
-                payload=proposal_json,
+                # Two different numbers ride on this event. `confidence` is
+                # the model's confidence in this action; `diagnosis_confidence`
+                # is how sure the diagnose node was of the cause it is acting
+                # on. The second one only ever lived in graph state, so the
+                # console could not tell them apart and showed the action's
+                # number under a bare "confidence" label. A diagnosis at 0.0
+                # next to an action at 0.8 is the case that matters, and it
+                # was the hidden one.
+                payload={**proposal_json, "diagnosis_confidence": diagnosis_confidence},
             )
 
     return {"proposed_actions": proposals}
