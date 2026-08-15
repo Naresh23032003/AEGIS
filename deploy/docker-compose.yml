@@ -235,6 +235,27 @@ services:
     volumes:
       - ../:/repo:ro
       - ../apps/core/fixtures:/app/fixtures
+    # core-worker exposes no port (plan/01-architecture.md, Runtime
+    # topology), so liveness is a file its health loop touches after each
+    # successful checkpointer read, and this reads the timestamp back. The
+    # process being up is not the question: defect 17 was a worker whose
+    # checkpointer connection had died, which stayed up and escalated every
+    # incident it accepted. The 45s must match
+    # aegis.worker.HEALTH_STALE_SECONDS; the predicate is duplicated rather
+    # than imported so the check does not pay for importing langgraph every
+    # 10 seconds.
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import pathlib,sys,time; p=pathlib.Path('/tmp/aegis-worker-health'); sys.exit(0 if p.exists() and time.time()-float(p.read_text().strip())<45 else 1)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
     depends_on:
       aegis-db:
         condition: service_healthy

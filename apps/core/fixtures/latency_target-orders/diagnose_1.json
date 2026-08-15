@@ -2,13 +2,15 @@
   "calls": [
     {
       "arguments": {
-        "confidence": 0.8,
-        "evidence_refs": [
-          "query_metrics(target-orders)"
-        ],
-        "hypothesis": "The root cause of the incident is a proxy adding latency between orders and its database, resulting in high p95 latency on target-orders."
+        "service": "target-orders"
       },
-      "name": "submit_diagnosis"
+      "name": "query_metrics"
+    },
+    {
+      "arguments": {
+        "service": "target-orders"
+      },
+      "name": "query_logs"
     }
   ]
 }

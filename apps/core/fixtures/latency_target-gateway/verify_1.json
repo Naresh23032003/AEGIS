@@ -9,7 +9,7 @@
     {
       "arguments": {
         "passed": true,
-        "summary": "p95 latency on target-gateway confirmed to be 123.45ms, within the threshold of 1000ms."
+        "summary": "p95 latency on target-gateway confirmed to be 123.4ms, within the threshold of 1000.0ms."
       },
       "name": "submit_verification"
     }

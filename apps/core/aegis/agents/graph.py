@@ -10,6 +10,15 @@ Checkpointed in Postgres (AsyncPostgresSaver, schema `checkpoints`) so a
 killed core-worker can resume an in-flight run: pass input=None with the
 same thread_id (= incident_id) and LangGraph continues from the last
 persisted checkpoint (see resume_incident below).
+
+The saver is built over an AsyncConnectionPool, not
+AsyncPostgresSaver.from_conn_string. from_conn_string hands the saver one
+connection and no way to replace it, so a single dropped connection ended
+every later run in `psycopg.OperationalError: the connection is closed`
+while the worker stayed up and kept claiming incidents (defect 17, found
+in phase 12 and reproduced twice). The pool checks a connection on
+checkout and discards a dead one, and _invoke below retries once from the
+last checkpoint for the run that was holding the connection when it went.
 """
 
 from __future__ import annotations
@@ -19,9 +28,13 @@ import os
 from datetime import datetime
 from typing import Any
 
+import psycopg
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command
+from psycopg import AsyncConnection
+from psycopg.rows import DictRow, dict_row
+from psycopg_pool import AsyncConnectionPool
 
 from aegis import db
 from aegis.agents import nodes
@@ -32,9 +45,49 @@ logger = logging.getLogger("aegis.agents.graph")
 
 RECURSION_LIMIT = 50
 
+# pg_stat_activity.application_name for every checkpointer connection, so
+# the pool's backends can be told apart from the asyncpg pool's (aegis.db)
+# and terminated on their own. e2e/test_checkpointer_reconnect.py does
+# exactly that.
+CHECKPOINT_APP_NAME = "aegis-checkpointer"
+CHECKPOINT_POOL_MIN_SIZE = 1
+CHECKPOINT_POOL_MAX_SIZE = 10
+# A thread_id no incident can ever have (incident ids are ULIDs prefixed
+# `inc_`), so probing it reads the checkpoints table without touching a
+# real run's state.
+HEALTH_THREAD_ID = "healthcheck"
+
 
 def checkpoint_conn_string() -> str:
     return os.environ.get("AEGIS_DATABASE_URL", db.database_url())
+
+
+def checkpointer_pool() -> AsyncConnectionPool[AsyncConnection[DictRow]]:
+    """Opened by the caller (`async with`). autocommit and
+    prepare_threshold=0 are what AsyncPostgresSaver needs from a pooled
+    connection; `check` is what makes the pool recover, since without it a
+    backend killed while idle in the pool is handed straight back out."""
+    return AsyncConnectionPool(
+        conninfo=checkpoint_conn_string(),
+        connection_class=AsyncConnection[DictRow],
+        min_size=CHECKPOINT_POOL_MIN_SIZE,
+        max_size=CHECKPOINT_POOL_MAX_SIZE,
+        open=False,
+        check=AsyncConnectionPool.check_connection,
+        kwargs={
+            "autocommit": True,
+            "prepare_threshold": 0,
+            "row_factory": dict_row,
+            "application_name": CHECKPOINT_APP_NAME,
+        },
+    )
+
+
+async def probe_checkpointer(checkpointer: AsyncPostgresSaver) -> None:
+    """One real read through the pool. Raises if the checkpointer cannot
+    reach Postgres, which is the condition the worker must not report
+    healthy through (see aegis.worker.run_health_loop)."""
+    await checkpointer.aget_tuple({"configurable": {"thread_id": HEALTH_THREAD_ID}})
 
 
 def gate_router(state: AgentState) -> str:
@@ -103,6 +156,23 @@ def _graph_config(incident_id: str) -> dict[str, Any]:
     return {"configurable": {"thread_id": incident_id}, "recursion_limit": RECURSION_LIMIT}
 
 
+async def _invoke(graph: Any, incident_id: str, first: Any, retry: Any) -> None:
+    """One bounded retry on a lost checkpointer connection, and only on
+    that. The pool replaces a dead connection on the next checkout, but the
+    run that was holding one when it dropped still sees the
+    OperationalError out of the checkpoint write; retrying picks up a fresh
+    connection and continues from the last persisted checkpoint rather than
+    escalating an incident over a socket. Anything else raises and is
+    handled by the caller as before: a second failure escalates."""
+    try:
+        await graph.ainvoke(first, config=_graph_config(incident_id))
+    except psycopg.OperationalError as exc:
+        logger.warning(
+            "checkpointer connection lost during incident %s (%s); retrying once", incident_id, exc
+        )
+        await graph.ainvoke(retry, config=_graph_config(incident_id))
+
+
 async def run_incident(
     graph: Any, *, incident: dict[str, Any], detection_snapshot: dict[str, Any]
 ) -> None:
@@ -127,7 +197,7 @@ async def run_incident(
         # approval) makes ainvoke return normally with "__interrupt__" in
         # the result, not raise; the run is legitimately parked, and there
         # is nothing further to do here (see resume_parked_run below).
-        await graph.ainvoke(state, config=_graph_config(incident_id))
+        await _invoke(graph, incident_id, state, None)
     except Exception as exc:  # noqa: BLE001 - never leave an incident stuck mid-run
         await _mark_escalated_on_crash(incident_id, exc)
 
@@ -141,7 +211,7 @@ async def resume_incident(graph: Any, *, incident_id: str) -> None:
     died mid-node), so this always re-runs the last incomplete node from
     scratch."""
     try:
-        await graph.ainvoke(None, config=_graph_config(incident_id))
+        await _invoke(graph, incident_id, None, None)
     except Exception as exc:  # noqa: BLE001 - never leave an incident stuck mid-run
         await _mark_escalated_on_crash(incident_id, exc)
 
@@ -155,6 +225,7 @@ async def resume_parked_run(graph: Any, *, incident_id: str) -> None:
     is what actually wakes the paused graph in core-worker (see
     aegis.worker's approval dispatch loop)."""
     try:
-        await graph.ainvoke(Command(resume="continue"), config=_graph_config(incident_id))
+        resume: Any = Command(resume="continue")
+        await _invoke(graph, incident_id, resume, resume)
     except Exception as exc:  # noqa: BLE001 - never leave an incident stuck mid-run
         await _mark_escalated_on_crash(incident_id, exc)

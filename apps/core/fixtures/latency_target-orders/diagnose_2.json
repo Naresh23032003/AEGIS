@@ -2,9 +2,14 @@
   "calls": [
     {
       "arguments": {
-        "service": "target-gateway"
+        "confidence": 0.8,
+        "evidence_refs": [
+          "query_metrics(target-orders)",
+          "query_logs(target-orders)"
+        ],
+        "hypothesis": "The root cause of the incident is the high p95 latency on target-orders, which is 5000.0 seconds, exceeding the threshold of 1000.0 seconds. The error rate is null, indicating no errors, but the high latency suggests that the service is taking a long time to process requests."
       },
-      "name": "query_logs"
+      "name": "submit_diagnosis"
     }
   ]
 }

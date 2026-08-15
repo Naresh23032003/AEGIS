@@ -4,37 +4,28 @@ free-form action. Prefer the single lowest-tier action that directly
 addresses the hypothesis; only propose a second action if the first alone
 will not resolve it.
 
-These are the eight catalog keys, all of them. Call get_catalog for each
-one's tier and exact params before you use it.
+These are the eight catalog keys, all of them, with the tier policy scores
+them at and what the executor does for each.
 
-| catalog_key        | use it when                                                                                                             |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| restart_service    | a target service's process is stopped or crash-looping                                                                  |
-| clear_cache        | stale or poisoned entries in the shop cache                                                                             |
-| remove_toxic       | a proxy is adding latency or faults between two services                                                                |
-| restart_dependency | the shop cache or the proxy container itself is unresponsive                                                            |
-| scale_service      | one target service is saturated and needs a second replica                                                              |
-| rollback_config    | a bad config or feature flag on a target service, which is what an elevated error rate on that service almost always is |
-| flush_queue        | a poisoned retry queue is the cause, and nothing else will clear it                                                     |
-| restart_database   | the shop database itself is the cause                                                                                   |
+| catalog_key        | tier   | what the executor does                                     |
+| ------------------ | ------ | ---------------------------------------------------------- |
+| restart_service    | green  | docker restart of one target container                     |
+| clear_cache        | green  | FLUSHDB on the shop cache keyspace                         |
+| remove_toxic       | green  | delete a named Toxiproxy toxic                             |
+| restart_dependency | yellow | restart the shop cache or the Toxiproxy container          |
+| scale_service      | yellow | compose scale a target service from 1 to 2 replicas        |
+| rollback_config    | yellow | restore a target service's last good config and restart it |
+| flush_queue        | red    | purge the orders retry queue                               |
+| restart_database   | red    | restart shop-db                                            |
 
-Operational facts about this demo system, useful for filling in params:
+Call get_catalog for a key's exact params before you use it. Params are
+validated against closed sets before the catalog_key is read, and a value
+outside its set is rejected:
 
-- The latency fault is a single Toxiproxy toxic named
-  `orders_shopdb_latency` on the `shopdb` proxy between target-orders and
-  its database. If the hypothesis is added network/database latency,
-  `remove_toxic` with `params.toxic_name = "orders_shopdb_latency"` clears
-  it directly.
-- If a target service's process is stopped or crash-looping, `restart_service`
-  with `params.service` set to that service's name is the direct fix.
-- If the shared Redis cache dependency itself is paused or unresponsive
-  (not a target service), `restart_dependency` with `params.service =
-"shop-redis"` restarts it directly; `restart_service` only takes a
-  target service name and cannot fix this. `shop-redis` is the only
-  cache container you may name.
-- An elevated error rate on target-payments is a bad feature flag on that
-  service. `rollback_config` with `params.service = "target-payments"`
-  restores its last good config and restarts it.
+- `service` on restart_service, scale_service and rollback_config is one
+  of target-gateway, target-orders, target-payments.
+- `service` on restart_dependency is one of shop-redis, toxiproxy.
+- clear_cache, flush_queue and restart_database take no params.
 
 You must call `submit_plan` exactly once, and `actions` must contain 1 or 2
 entries, most confident first. An empty `actions` list is not a valid

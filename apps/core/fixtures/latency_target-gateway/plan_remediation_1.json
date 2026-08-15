@@ -9,7 +9,7 @@
             "params": {
               "service": "target-gateway"
             },
-            "reasoning": "The hypothesis suggests a service process stopped or crash-looping in the target-gateway service, so restarting the service should directly address the issue.",
+            "reasoning": "High p95 latency on target-gateway may be due to a temporary issue that can be resolved by restarting the service",
             "rollback_key": null
           }
         ]

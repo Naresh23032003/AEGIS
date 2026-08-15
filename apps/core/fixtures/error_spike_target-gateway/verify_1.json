@@ -1,0 +1,17 @@
+{
+  "calls": [
+    {
+      "arguments": {
+        "services": "target-gateway"
+      },
+      "name": "run_verification_probes"
+    },
+    {
+      "arguments": {
+        "passed": true,
+        "summary": "Error rate on target-gateway is 0.00%."
+      },
+      "name": "submit_verification"
+    }
+  ]
+}

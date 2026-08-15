@@ -6,7 +6,7 @@
           "target-gateway"
         ],
         "severity": "sev2",
-        "summary": "p95 latency on target-gateway is 5767.86ms, exceeding the threshold of 1000ms."
+        "summary": "p95 latency on target-gateway is 7304.1ms, exceeding the threshold of 1000.0ms."
       },
       "name": "submit_triage"
     }
