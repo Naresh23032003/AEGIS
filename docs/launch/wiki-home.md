@@ -6,11 +6,15 @@ diagnoses them with LLM agents reading live metrics, logs and traces, fixes
 low-risk problems on its own, routes risky ones through a signed human
 approval, and writes every step to a hash-chained log you can replay.
 
-**[Read the two page overview (PDF)](https://github.com/Naresh23032003/AEGIS/raw/main/docs/launch/aegis-overview.pdf)**
+## The two page overview
 
-Page one is what it does and what it measured. Page two is the half that does
-not work: one scenario that never heals, the two-word key mismatch behind it,
-and why the test for it is left failing in CI.
+**[Read it here](https://github.com/Naresh23032003/AEGIS/blob/main/docs/launch/aegis-overview.pdf)**
+(opens in the browser) or
+[download the PDF](https://github.com/Naresh23032003/AEGIS/raw/main/docs/launch/aegis-overview.pdf).
+
+Page one is what it does, the loop it runs, and the numbers from actual runs.
+Page two is the half that does not work: the one scenario that never heals, the
+two-word key mismatch underneath it, and why that test is left failing in CI.
 
 ## Start here
 
