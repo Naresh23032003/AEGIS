@@ -29,7 +29,13 @@ export interface ActionView {
   catalog_key?: string;
   params?: Record<string, unknown>;
   tier?: ActionTier;
+  /** The model's confidence in this action. */
   confidence?: number;
+  /** The diagnose node's confidence in the cause this action addresses,
+   * copied onto action.proposed at propose time (plan/02-contracts.md,
+   * Event catalog). A different number from `confidence` and routinely a
+   * much lower one, so the two are always labelled apart in the UI. */
+  diagnosisConfidence?: number;
   reasoning?: string;
   rollback_key?: string | null;
   status:
@@ -133,6 +139,7 @@ interface AnyEventPayload {
   params: Record<string, unknown>;
   tier: ActionTier;
   confidence: number;
+  diagnosis_confidence: number;
   reasoning: string;
   rollback_key: string | null;
   opa_rule_id: string;
@@ -243,6 +250,7 @@ function applyEvent(view: IncidentView, e: EventEnvelope): IncidentView {
             params: p.params,
             tier: p.tier,
             confidence: p.confidence,
+            diagnosisConfidence: p.diagnosis_confidence,
             reasoning: p.reasoning,
             rollback_key: p.rollback_key,
             status: "proposed",

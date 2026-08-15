@@ -32,7 +32,7 @@ Rules: `id` is a ULID. `actor` is namespaced as shown. `payload` shape is define
 | agent.run.completed | worker | agent, tokens_in, tokens_out, cost_usd, duration_ms |
 | agent.run.failed | worker | agent, reason |
 | agent.quarantined | supervisor | agent, reason, recovery (resume/escalate) |
-| action.proposed | remediation agent | action_id, catalog_key, params, tier, confidence, reasoning (max 600 chars), rollback_key |
+| action.proposed | remediation agent | action_id, catalog_key, params, tier, confidence, reasoning (max 600 chars), rollback_key, diagnosis_confidence |
 | action.policy_checked | worker | action_id, decision (allow/deny), opa_rule_id |
 | action.veto_window_opened | worker | action_id, closes_at |
 | action.approval_requested | worker | action_id, diff, reasoning |
@@ -46,6 +46,8 @@ Rules: `id` is a ULID. `actor` is namespaced as shown. `payload` shape is define
 | incident.escalated | worker | reason, loops_exhausted |
 
 The console renders every one of these; do not add types the console will not render.
+
+`action.proposed` carries two confidences and they are not interchangeable: `confidence` is the ActionProposal field (how sure the model is of this action), `diagnosis_confidence` is the diagnose node's confidence in the cause being acted on, copied out of IncidentState at propose time. It sits on the payload rather than inside `action-proposal.schema.json` because it is not a property of the proposal, and it is on this event rather than one of its own because no event type carried it before and the console needs both numbers on the same card.
 
 ## Database schema (aegis-db, schema `aegis`)
 
