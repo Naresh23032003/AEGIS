@@ -162,8 +162,9 @@ $ curl -s .../api/incidents/inc_01KZD0GS7AGVX3NXY3VSA40GYW/verify-chain
 {"valid":true,"break_at_seq":null}
 ```
 
-Recording: [docs/media/stranger-test.gif](../media/stranger-test.gif), the
-whole 62s run from cold browser to resolved card.
+The run was recorded at the time, 62s from cold browser to resolved card.
+That recording has been deleted: the pasted output above is the evidence,
+and the file was 3.4MB of duplicate.
 
 ### Defect 1 (low): README named a button that does not exist
 
