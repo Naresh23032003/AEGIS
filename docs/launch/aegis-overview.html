@@ -1,0 +1,437 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>AEGIS, a short overview</title>
+<style>
+  @page {
+    size: A4;
+    margin: 16mm 16mm 14mm;
+  }
+
+  :root {
+    --ink: #0b0e11;
+    --muted: #5b6672;
+    --faint: #8b98a5;
+    --rule: #e4e9ee;
+    --wash: #f6f8fa;
+    --accent: #0e7f96;
+    --good: #0d8a5f;
+    --bad: #c32449;
+    --sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    --mono: "SF Mono", "Menlo", "Consolas", monospace;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    font-family: var(--sans);
+    color: var(--ink);
+    font-size: 9.5pt;
+    line-height: 1.44;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  p {
+    margin: 0 0 6.5pt;
+  }
+
+  /* Each page is a flex column just tall enough to fill the @page content
+     box (297mm less the 16mm/14mm margins, minus a hair so rounding never
+     spills a blank third page), so the footer can sit on the baseline
+     without position:fixed. A fixed footer repeats on every sheet in
+     Chromium's print path, which put page two's number on page one. */
+  .page {
+    display: flex;
+    flex-direction: column;
+    min-height: 261mm;
+    page-break-after: always;
+  }
+  .page:last-child {
+    page-break-after: auto;
+  }
+
+  /* Masthead */
+  .mast {
+    border-bottom: 2.5pt solid var(--ink);
+    padding-bottom: 7pt;
+    margin-bottom: 14pt;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  h1 {
+    font-size: 27pt;
+    letter-spacing: 0.14em;
+    margin: 0;
+    font-weight: 700;
+  }
+  .mast .tag {
+    font-family: var(--mono);
+    font-size: 7.6pt;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+  }
+
+  .lede {
+    font-size: 11.6pt;
+    line-height: 1.4;
+    color: var(--ink);
+    margin: 0 0 12pt;
+    max-width: 92%;
+  }
+
+  h2 {
+    font-size: 8.4pt;
+    text-transform: uppercase;
+    letter-spacing: 0.13em;
+    color: var(--accent);
+    margin: 12pt 0 4.5pt;
+    font-weight: 700;
+  }
+
+  h2:first-of-type {
+    margin-top: 0;
+  }
+
+  /* Pipeline */
+  .loop {
+    display: flex;
+    gap: 3pt;
+    margin: 3pt 0 11pt;
+  }
+  .loop div {
+    flex: 1;
+    border: 0.6pt solid var(--rule);
+    border-top: 2pt solid var(--accent);
+    border-radius: 2pt;
+    padding: 5pt 3pt 6pt;
+    text-align: center;
+    background: var(--wash);
+  }
+  .loop .k {
+    font-family: var(--mono);
+    font-size: 8pt;
+    display: block;
+    color: var(--ink);
+  }
+  .loop .v {
+    font-size: 6.9pt;
+    color: var(--faint);
+    letter-spacing: 0.03em;
+  }
+  .loop div:nth-child(5) {
+    border-top-color: var(--good);
+  }
+
+  /* Numbers */
+  .stats {
+    display: flex;
+    gap: 9pt;
+    margin: 4pt 0 12pt;
+  }
+  .stat {
+    flex: 1;
+    border-left: 2pt solid var(--rule);
+    padding-left: 7pt;
+  }
+  .stat .n {
+    font-family: var(--mono);
+    font-size: 16pt;
+    line-height: 1.1;
+    color: var(--ink);
+  }
+  .stat .l {
+    font-size: 7.4pt;
+    color: var(--muted);
+    line-height: 1.35;
+    margin-top: 2pt;
+  }
+  .stat.good {
+    border-left-color: var(--good);
+  }
+  .stat.bad {
+    border-left-color: var(--bad);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8.6pt;
+    margin: 2pt 0 5pt;
+  }
+  th {
+    text-align: left;
+    font-size: 7.2pt;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    border-bottom: 0.8pt solid var(--ink);
+    padding: 0 6pt 3pt 0;
+    font-weight: 700;
+  }
+  td {
+    padding: 3.4pt 6pt 3.4pt 0;
+    border-bottom: 0.5pt solid var(--rule);
+    vertical-align: top;
+  }
+  td.m,
+  th.m {
+    font-family: var(--mono);
+  }
+
+  .note {
+    font-size: 7.8pt;
+    color: var(--muted);
+    line-height: 1.45;
+  }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.93em;
+    background: var(--wash);
+    padding: 0.5pt 2.5pt;
+    border-radius: 2pt;
+  }
+
+  ul {
+    margin: 0 0 8pt;
+    padding-left: 12pt;
+  }
+  li {
+    margin-bottom: 3.5pt;
+  }
+  li b {
+    font-weight: 700;
+  }
+
+  .callout {
+    border: 0.7pt solid var(--rule);
+    border-left: 2.5pt solid var(--bad);
+    border-radius: 2pt;
+    background: var(--wash);
+    padding: 7pt 9pt;
+    margin: 3pt 0 8pt;
+  }
+  .callout h3 {
+    margin: 0 0 4pt;
+    font-size: 9.6pt;
+  }
+  .callout p:last-child {
+    margin-bottom: 0;
+  }
+
+  .foot {
+    margin-top: auto;
+    border-top: 0.5pt solid var(--rule);
+    padding-top: 4pt;
+    font-family: var(--mono);
+    font-size: 6.9pt;
+    color: var(--faint);
+    display: flex;
+    justify-content: space-between;
+  }
+</style>
+
+<div class="page">
+  <div class="mast">
+    <h1>AEGIS</h1>
+    <span class="tag">self-healing incident ops / built in the open</span>
+  </div>
+
+  <p class="lede">
+    Most self-healing demos sell you the moment it fixes itself. This one sells the receipt: what it
+    saw, what it decided, who approved it, and whether the fault was actually gone afterwards.
+  </p>
+
+  <h2>What it is</h2>
+  <p>
+    AEGIS watches a small but real three-service shop stack. When something breaks, a plain rules
+    engine notices, LLM agents read the metrics, logs and traces, and the system picks a fix from a
+    closed list of actions it is allowed to take. Low-risk fixes run on their own. Risky ones wait
+    for a signed human decision. Every step is written to a hash-chained log you can replay
+    afterwards, frame by frame.
+  </p>
+  <p>
+    You can run the whole thing offline with no API key. <code>MOCK_LLM=1</code> replays recorded
+    model responses, which is how CI runs it and how the demo was recorded.
+  </p>
+
+  <h2>The loop</h2>
+  <div class="loop">
+    <div><span class="k">detect</span><span class="v">rules, no LLM</span></div>
+    <div><span class="k">triage</span><span class="v">LLM</span></div>
+    <div><span class="k">diagnose</span><span class="v">LLM + tools</span></div>
+    <div><span class="k">plan</span><span class="v">LLM</span></div>
+    <div><span class="k">gate</span><span class="v">OPA policy</span></div>
+    <div><span class="k">execute</span><span class="v">Docker</span></div>
+    <div><span class="k">verify</span><span class="v">probes</span></div>
+  </div>
+  <p class="note">
+    Green tier executes immediately. Yellow opens a veto window. Red blocks until a human signs an
+    approval with an Ed25519 key held in their browser, never on the server.
+  </p>
+
+  <h2>A run, measured</h2>
+  <div class="stats">
+    <div class="stat good">
+      <div class="n">7s</div>
+      <div class="l">to heal a stopped payments service, 13 seconds after detection fired</div>
+    </div>
+    <div class="stat">
+      <div class="n">155</div>
+      <div class="l">unit and policy tests: 93 Python, 53 TypeScript, 9 OPA</div>
+    </div>
+    <div class="stat bad">
+      <div class="n">18/19</div>
+      <div class="l">end-to-end scenarios pass on fixtures. The one that fails is meant to</div>
+    </div>
+  </div>
+
+  <h2>Earlier live numbers</h2>
+  <p class="note" style="margin-bottom: 5pt">
+    Three live runs per scenario against the real API, on a model set this project no longer runs
+    (<code>gpt-oss-120b</code>, <code>gpt-oss-20b</code>, <code>qwen3.6-27b</code>). Kept because
+    they were measured, labelled because they are not current.
+  </p>
+  <table>
+    <tr>
+      <th>Scenario</th>
+      <th class="m">MTTR</th>
+      <th class="m">Cost</th>
+      <th>Action taken</th>
+    </tr>
+    <tr>
+      <td>latency</td>
+      <td class="m">92s</td>
+      <td class="m">$0.0025</td>
+      <td class="m">remove_toxic (green)</td>
+    </tr>
+    <tr>
+      <td>crash</td>
+      <td class="m">61s</td>
+      <td class="m">$0.0015</td>
+      <td class="m">restart_service (green)</td>
+    </tr>
+    <tr>
+      <td>error spike</td>
+      <td class="m">132s</td>
+      <td class="m">$0.0030</td>
+      <td class="m">rollback_config (yellow)</td>
+    </tr>
+    <tr>
+      <td>memory leak</td>
+      <td class="m">21s</td>
+      <td class="m">$0.0019</td>
+      <td class="m">restart_service (green)</td>
+    </tr>
+    <tr>
+      <td>cache outage</td>
+      <td class="m">136s</td>
+      <td class="m">$0.0023</td>
+      <td class="m">remove_toxic (green)</td>
+    </tr>
+  </table>
+
+  <h2>The two minute recording</h2>
+  <p>
+    The demo in the repository is one continuous run with two halves, and the second half is the
+    interesting one. First a service is stopped: detection fires, the agent reads metrics, logs and
+    container stats, policy allows a green tier restart, and it is healed in seven seconds.
+  </p>
+  <p>
+    Then latency is injected, and the system gets it wrong. It restarts a service that was never
+    down, the fault survives, and the incident closes anyway. The recording ends on the name of the
+    failing test rather than on a success frame, because a demo that only shows the good half is the
+    thing this project is arguing against.
+  </p>
+
+  <div class="foot">
+    <span>AEGIS overview</span><span>github.com/Naresh23032003/AEGIS</span><span>1 / 2</span>
+  </div>
+</div>
+
+<div class="page">
+  <div class="mast">
+    <h1 style="font-size: 15pt">The honest half</h1>
+    <span class="tag">what does not work, and why it is still here</span>
+  </div>
+
+  <div class="callout">
+    <h3>One scenario does not heal, and the test for it stays red</h3>
+    <p>
+      Inject 1500ms of latency and the model proposes restarting a service that was never down. The
+      restart does nothing to a network proxy fault. The incident then closes anyway, because p95
+      latency is never compared against its threshold at all.
+    </p>
+    <p>
+      The cause is two words that do not match. The rules file keys the query
+      <code>p95_latency</code>. The rule that uses it has the id <code>latency_p95</code>. The
+      verification code builds its threshold table under rule ids and then looks it up by query key,
+      so the lookup returns nothing and the comparison is skipped. Error rate escaped this only
+      because its two names happen to be the same string. Latency has gone unchecked since the
+      second week of the project.
+    </p>
+    <p>
+      <code>test_latency_heals</code> fails in CI on purpose. Marking it skipped would make the
+      dashboard green and the system no better.
+    </p>
+  </div>
+
+  <h2>Diagnosis quality is the weak point</h2>
+  <p>
+    The prompts used to list every injected fault by mechanism, and name the fix with the parameter
+    already filled in. A model handed a symptom could match the list and answer without reading
+    anything. Both lists were deleted. Without them, over five live diagnoses, one model call read
+    the metrics and logs before answering and four answered immediately with no tool call at all.
+  </p>
+  <p>
+    Across 29 live diagnoses the trace-reading tool has been called zero times. The tool-free
+    answers used to name a fault confidently at 0.8. They now restate the symptom at 0.0. The model
+    was not diagnosing before and it is not diagnosing now. It has only stopped sounding like it
+    was.
+  </p>
+
+  <h2>What it does prove</h2>
+  <ul>
+    <li>
+      <b>Nothing improvised.</b> Agents pick a key from a fixed, typed catalog. There is no path
+      from a model response to a shell command, and the executor never imports LLM code.
+    </li>
+    <li>
+      <b>Every action was gated.</b> Policy evaluates tier, confidence and severity before anything
+      runs, including the actions that turned out to be useless.
+    </li>
+    <li>
+      <b>The log cannot be quietly edited.</b> Each event hashes the one before it, written in the
+      same transaction as the row it describes. An endpoint recomputes the chain on demand.
+    </li>
+    <li>
+      <b>It admits the miss.</b> Verification separately re-checks whether the injected fault is
+      still in place, so incidents that closed over a live fault say
+      <code>[injected fault still present at verify]</code> in their summary and in the log.
+    </li>
+    <li>
+      <b>There is an export.</b> One request returns a zip with a timeline PDF, every policy
+      decision, every signed approval, chain verification and cost, plus the raw events.
+    </li>
+  </ul>
+
+  <h2>What it is not</h2>
+  <p>
+    A production incident response system. It is one Docker Compose host, five chaos scenarios and a
+    free tier API key whose daily quota this project used up more than once. Kubernetes, Temporal,
+    hardware-backed approvals and a bigger action catalog are written down as issues, not built.
+  </p>
+
+  <p class="note" style="margin-top: 14pt">
+    Run it yourself: clone, <code>cp .env.example .env</code>, <code>make up</code>. Docker and
+    Python 3.12 are the only prerequisites, and the default configuration needs no API key. Then
+    open the chaos panel and break something.
+  </p>
+
+  <div class="foot">
+    <span>AEGIS overview</span><span>github.com/Naresh23032003/AEGIS</span><span>2 / 2</span>
+  </div>
+</div>
