@@ -425,8 +425,7 @@ def capture(client: httpx.Client, video_dir: Path, reduced_motion: str) -> tuple
         )
         context.add_init_script(CAPTION_SCRIPT)
         page = context.new_page()
-        started_at = time.monotonic()
-        take = Take(page, started_at)
+        take = Take(page, time.monotonic())
         # ?view=3d under "reduce" is the forced-3D path: the scene mounts and
         # renders on state changes only, no idle ticker or ambient pulse
         # (plan/05-frontend.md, Fallback). withViewParam carries the
@@ -438,7 +437,7 @@ def capture(client: httpx.Client, video_dir: Path, reduced_motion: str) -> tuple
             take.wait_painted()
             # Everything before this instant is navigation and skeleton, and
             # gets trimmed off the front of both artifacts.
-            take.paint_offset = time.monotonic() - started_at
+            take.paint_offset = time.monotonic() - take.started_at
             act_one_crash(take, client)
             act_two_latency(take, client)
         finally:
