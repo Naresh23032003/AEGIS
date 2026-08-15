@@ -42,7 +42,7 @@ export const SCENARIOS: ScenarioMeta[] = [
   {
     key: "cache_outage",
     name: "cache outage",
-    breaks: "pause redis container",
+    breaks: "pause shop-redis container",
     expectedResponse: "cache dependency down, latency spike",
     fixPath: "restart_dependency (yellow)",
   },

@@ -32,6 +32,7 @@ from e2e.conftest import events_for, verify_chain, wait_for_resolution
 
 COMPOSE = ["docker", "compose", "-f", "deploy/docker-compose.yml"]
 SEED_SCRIPT = Path(__file__).parent.parent / "scripts" / "seed_red_action.py"
+YELLOW_SEED_SCRIPT = Path(__file__).parent.parent / "scripts" / "seed_yellow_action.py"
 
 
 def _seed_parked_red_action() -> tuple[str, str]:
@@ -157,55 +158,68 @@ def test_approval_after_resolution_is_rejected_with_409(client: httpx.Client) ->
 
 
 def test_veto_during_the_window_escalates_instead_of_healing(client: httpx.Client) -> None:
-    """error_spike proposes a yellow-tier rollback_config (test_scenarios.py's
-    test_error_spike_heals confirms the unvetoed path); this drives the same
-    scenario and vetoes it instead, during the real 30s window."""
+    """A signed veto inside the real 30s window cancels the action and sends
+    the incident to escalate instead of execute.
+
+    The yellow action is seeded (scripts/seed_yellow_action.py), the same way
+    the red-tier tests above seed theirs, rather than driven out of an
+    error_spike injection. Live, a model has to return a confident yellow
+    proposal for that injection before this test can even begin, and in the
+    phase 8 run it returned a green remove_toxic at confidence 0.0 that OPA
+    correctly denied, so no window opened and this test timed out on a
+    working policy engine (docs/reports/FINAL_VERIFICATION.md). What is
+    under test is the veto window, so the veto window is what this drives.
+    The unvetoed path through a live model stays covered by
+    test_scenarios.py's test_error_spike_heals.
+    """
     key, pubkey_hex = _register_key()
     client.post("/api/keys", json={"pubkey": pubkey_hex, "label": "e2e-veto-test"})
 
-    injected_at = time.time()
-    client.post("/api/chaos/error_spike")
+    seed = subprocess.Popen(  # noqa: S603 - fixed argv, no shell, internal test tooling
+        [*COMPOSE, "exec", "-T", "core-worker", "python", "-"],  # noqa: S607
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
     try:
-        action_id = _wait_for_veto_window(client, after=injected_at)
+        assert seed.stdin is not None and seed.stdout is not None
+        seed.stdin.write(YELLOW_SEED_SCRIPT.read_text())
+        seed.stdin.close()
+        # Printed and flushed before the graph runs, so this lands while the
+        # veto window is still open rather than after gate has timed it out.
+        seeded = json.loads(seed.stdout.readline().strip())
+        incident_id, action_id = seeded["incident_id"], seeded["action_id"]
+
+        _wait_for_veto_window(client, incident_id=incident_id, action_id=action_id)
+
         body = {"pubkey": pubkey_hex, **_sign(key, action_id=action_id, decision="veto")}
         resp = client.post(f"/api/veto/{action_id}", json=body)
         assert resp.status_code == 200, resp.text
         assert resp.json()["type"] == "action.rejected"
 
-        action = _find_action(client, action_id)
-        incident_id = action["incident_id"]
         resolved = wait_for_resolution(client, incident_id)
         assert resolved["status"] == "escalated", resolved
 
         events = events_for(client, incident_id)
         assert not any(e["type"] == "action.executed" for e in events), events
     finally:
-        client.delete("/api/chaos/error_spike")
+        seed.wait(timeout=120)
 
 
-def _wait_for_veto_window(client: httpx.Client, *, after: float, timeout: float = 90.0) -> str:
+def _wait_for_veto_window(
+    client: httpx.Client, *, incident_id: str, action_id: str, timeout: float = 60.0
+) -> None:
     deadline = time.time() + timeout
     while time.time() < deadline:
-        resp = client.get("/api/incidents", params={"limit": 20})
-        for incident in resp.json():
-            started = datetime.fromisoformat(incident["started_at"].replace("Z", "+00:00"))
-            if started.timestamp() < after - 5:
-                continue
-            events = events_for(client, incident["id"])
-            opened = next((e for e in events if e["type"] == "action.veto_window_opened"), None)
-            if opened is not None:
-                return str(opened["payload"]["action_id"])
+        for event in events_for(client, incident_id):
+            if (
+                event["type"] == "action.veto_window_opened"
+                and event["payload"]["action_id"] == action_id
+            ):
+                return
         time.sleep(1)
-    raise TimeoutError(f"no veto window opened within {timeout}s")
-
-
-def _find_action(client: httpx.Client, action_id: str) -> dict[str, object]:
-    resp = client.get("/api/incidents", params={"limit": 20})
-    for incident in resp.json():
-        for action in client.get(f"/api/incidents/{incident['id']}").json()["actions"]:
-            if action["id"] == action_id:
-                return {**action, "incident_id": incident["id"]}
-    raise AssertionError(f"action {action_id} not found on any recent incident")
+    raise TimeoutError(f"no veto window opened for {action_id} within {timeout}s")
 
 
 def test_verify_chain_detects_tampering(client: httpx.Client) -> None:

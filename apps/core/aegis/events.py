@@ -126,14 +126,16 @@ async def emit(
         )
     except (TimeoutError, OSError, redis.exceptions.RedisError) as exc:
         # Postgres is the source of truth for the chain; a stalled or
-        # disrupted Redis (e.g. the cache_outage scenario pausing, or later
-        # unpausing, the same container that carries the event stream, which
-        # resets any connection the pool was mid-read on) must never lose an
-        # already-committed event, only delay its live delivery. Replay on
-        # reconnect covers it. redis.exceptions.RedisError is the one that
-        # actually matters here: found live, a redis.exceptions.ConnectionError
-        # (raised well after redis comes back from a pause, on a connection
-        # the pool had open across it) is neither TimeoutError nor OSError,
+        # disrupted aegis-redis must never lose an already-committed event,
+        # only delay its live delivery. Replay on reconnect covers it. The
+        # original cause is gone as of phase 9 (cache_outage used to pause,
+        # and restart_dependency used to restart, the very container carrying
+        # the event stream; both now hit shop-redis instead), but a bus can
+        # still stall for reasons AEGIS does not control, so the handler
+        # stays. redis.exceptions.RedisError is the one that matters here:
+        # found live, a redis.exceptions.ConnectionError (raised well after
+        # a pause, on a connection the pool held open across it) is neither
+        # TimeoutError nor OSError,
         # so it used to propagate out of this function; when that happened
         # inside _mark_escalated_on_crash's transaction (aegis.agents.graph),
         # the whole transaction rolled back and the incident it was trying to

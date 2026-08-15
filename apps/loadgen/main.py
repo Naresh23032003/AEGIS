@@ -2,7 +2,7 @@
 
 ~5 rps, jittered, mixed between checkout (writes) and order lookups
 (reads, cache hits on repeat) so target-orders exercises both the DB path
-through Toxiproxy and the redis cache path. plan/06-milestones.md, Phase 1.
+through Toxiproxy and the shop-redis cache path. plan/06-milestones.md, Phase 1.
 """
 
 import asyncio

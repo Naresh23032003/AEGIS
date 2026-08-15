@@ -25,7 +25,7 @@ POLL_SECONDS = 3
 TIMEOUT_SECONDS = 240
 
 # cache_outage and error_spike are qualitatively worse than the other
-# three: a paused redis breaks every request through target-orders (and,
+# three: a paused shop-redis breaks every request through target-orders (and,
 # cascading, target-gateway's checkout calls); a 50%-error payments
 # breaks every checkout that reaches it the same way. Both continuously,
 # not as a single probe. Left injected for the whole TIMEOUT_SECONDS
@@ -155,7 +155,7 @@ def _restore_worker() -> None:
     # Mirrors e2e/conftest.py's _ensure_worker_running retry: right after
     # docker stop/rm churn (aegis-fixture-recorder above), the daemon can
     # still be finalizing the previous container's exit and briefly report
-    # a healthy dependency (redis) as unhealthy, failing this start.
+    # a healthy dependency (shop-redis) as unhealthy, failing this start.
     for attempt in range(3):
         try:
             run([*COMPOSE, "up", "-d", "core-worker"])

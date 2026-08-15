@@ -6,8 +6,8 @@
 //
 // Nodes are the fixed five from plan/01-architecture.md's runtime
 // topology table (target-gateway, target-orders, target-payments,
-// shop-db, redis); edges are the real call graph (gateway calls orders
-// and payments; orders reaches shop-db through Toxiproxy and redis for
+// shop-db, shop-redis); edges are the real call graph (gateway calls orders
+// and payments; orders reaches shop-db through Toxiproxy and shop-redis for
 // cache). Traffic level is fixed at "medium" for every edge: no HTTP API
 // in plan/02-contracts.md exposes a live per-service request-rate bucket
 // to the console, and adding one is out of this phase's scope; see
@@ -55,14 +55,14 @@ const NODE_IDS = [
   "target-orders",
   "target-payments",
   "shop-db",
-  "redis",
+  "shop-redis",
 ] as const;
 
 const EDGE_DEFS: { id: string; source: string; target: string }[] = [
   { id: "gateway-orders", source: "target-gateway", target: "target-orders" },
   { id: "gateway-payments", source: "target-gateway", target: "target-payments" },
   { id: "orders-shopdb", source: "target-orders", target: "shop-db" },
-  { id: "orders-redis", source: "target-orders", target: "redis" },
+  { id: "orders-redis", source: "target-orders", target: "shop-redis" },
 ];
 
 export function useTopologyState(): TopologyState {

@@ -5,9 +5,9 @@
         "confidence": 0.85,
         "evidence_refs": [
           "query_metrics(target-orders)",
-          "get_container_stats(redis)"
+          "get_container_stats(shop-redis)"
         ],
-        "hypothesis": "The shared Redis cache dependency is paused and unresponsive, causing every cache read and write on target-orders to hang; get_container_stats(redis) shows the container itself is paused, which rules out the toxiproxy database proxy as the cause."
+        "hypothesis": "The shared Redis cache dependency is paused and unresponsive, causing every cache read and write on target-orders to hang; get_container_stats(shop-redis) shows the container itself is paused, which rules out the toxiproxy database proxy as the cause."
       },
       "name": "submit_diagnosis"
     }

@@ -37,7 +37,7 @@ const NODE_IDS = [
   "target-orders",
   "target-payments",
   "shop-db",
-  "redis",
+  "shop-redis",
 ] as const;
 
 const NODE_POSITIONS: Record<string, [number, number, number]> = {
@@ -45,7 +45,7 @@ const NODE_POSITIONS: Record<string, [number, number, number]> = {
   "target-orders": [-3.2, 0, -0.5],
   "target-payments": [3.2, 0, -0.5],
   "shop-db": [-3.2, 0, 3.2],
-  redis: [1.2, 0, 3.2],
+  "shop-redis": [1.2, 0, 3.2],
 };
 
 const CORE_POSITION: [number, number, number] = [0, 3.4, 0];

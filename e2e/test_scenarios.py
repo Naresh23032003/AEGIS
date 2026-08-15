@@ -12,6 +12,21 @@ cache_outage are yellow tier (their veto window opens and times out
 unvetoed, since nothing here vetoes them), and memory_leak is
 service_down's other cause (aegis.agents.state's crash/memory_leak
 disambiguation).
+
+Phase 9 replaces "the expected catalog_key executed" with "the injected
+fault is actually gone", queried from the chaos API rather than inferred
+from which action ran. The phase 8 live run is why: a live diagnose blamed
+the cache instead of the Toxiproxy toxic, plan_remediation proposed a
+yellow restart_dependency instead of a green remove_toxic, policy allowed
+it, the veto window timed out, verify passed and the incident resolved in
+34s with the toxic still installed (docs/reports/FINAL_VERIFICATION.md).
+The old assertion failed that run on the action's identity, which is the
+right verdict for the wrong reason, and it would equally have failed a
+correct heal that a live model reached by a different legal route.
+
+The new assertion is strictly harder to satisfy. A heal that leaves the
+fault in place now fails on the fault, and an unanswerable chaos API
+(fault_present null) fails too rather than passing on a shrug.
 """
 
 from __future__ import annotations
@@ -21,13 +36,19 @@ import time
 
 import httpx
 
-from e2e.conftest import events_for, verify_chain, wait_for_incident, wait_for_resolution
+from e2e.conftest import (
+    events_for,
+    verify_chain,
+    wait_for_fault_cleared,
+    wait_for_incident,
+    wait_for_resolution,
+)
 
 MTTR_LIMIT = 150 if os.environ.get("MOCK_LLM") == "0" else 90
 
 
 def _assert_healed(
-    client: httpx.Client, *, source_rule: str, service: str, expected_catalog_key: str
+    client: httpx.Client, *, scenario: str, source_rule: str, service: str
 ) -> None:
     injected_at = time.time()
     incident = wait_for_incident(
@@ -41,8 +62,18 @@ def _assert_healed(
     assert resolved["mttr_seconds"] < MTTR_LIMIT, resolved
 
     events = events_for(client, incident["id"])
-    executed_keys = [e["payload"]["catalog_key"] for e in events if e["type"] == "action.executed"]
-    assert expected_catalog_key in executed_keys, executed_keys
+    executed = [e for e in events if e["type"] == "action.executed"]
+    assert executed, "incident resolved without executing any action"
+
+    # The heal has to have removed the fault, whichever catalog_key the
+    # model picked to do it. False is the only pass: True means the
+    # incident closed over a live fault, None means the chaos API could not
+    # tell and the claim is unproven.
+    fault_present = wait_for_fault_cleared(client, scenario)
+    assert fault_present is False, (
+        f"{scenario}: incident {incident['id']} resolved but fault_present="
+        f"{fault_present} after actions {[e['payload']['catalog_key'] for e in executed]}"
+    )
 
     chain = verify_chain(client, incident["id"])
     assert chain["valid"], chain
@@ -53,9 +84,9 @@ def test_latency_heals(client: httpx.Client) -> None:
     try:
         _assert_healed(
             client,
+            scenario="latency",
             source_rule="latency_p95",
             service="target-orders",
-            expected_catalog_key="remove_toxic",
         )
     finally:
         client.delete("/api/chaos/latency")
@@ -66,9 +97,9 @@ def test_crash_heals(client: httpx.Client) -> None:
     try:
         _assert_healed(
             client,
+            scenario="crash",
             source_rule="service_down",
             service="target-payments",
-            expected_catalog_key="restart_service",
         )
     finally:
         client.delete("/api/chaos/crash")
@@ -79,9 +110,9 @@ def test_error_spike_heals(client: httpx.Client) -> None:
     try:
         _assert_healed(
             client,
+            scenario="error_spike",
             source_rule="error_rate",
             service="target-payments",
-            expected_catalog_key="rollback_config",
         )
     finally:
         client.delete("/api/chaos/error_spike")
@@ -92,9 +123,9 @@ def test_memory_leak_heals(client: httpx.Client) -> None:
     try:
         _assert_healed(
             client,
+            scenario="memory_leak",
             source_rule="service_down",
             service="target-payments",
-            expected_catalog_key="restart_service",
         )
     finally:
         client.delete("/api/chaos/memory_leak")
@@ -105,9 +136,9 @@ def test_cache_outage_heals(client: httpx.Client) -> None:
     try:
         _assert_healed(
             client,
+            scenario="cache_outage",
             source_rule="latency_p95",
             service="target-orders",
-            expected_catalog_key="restart_dependency",
         )
     finally:
         client.delete("/api/chaos/cache_outage")

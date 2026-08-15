@@ -12,13 +12,17 @@ incident's worth of events at a time, not a production fleet's.
 
 ## Decision
 
-Publish to a single Redis Stream, `aegis:events`. core-api tails it with
-`XREAD` and fans out to WebSocket clients. No Kafka, no NATS.
+Publish to a single Redis Stream, `aegis:events`, on its own container
+(`aegis-redis`). core-api tails it with `XREAD` and fans out to WebSocket
+clients. No Kafka, no NATS.
 
 ## Consequences
 
-One container to run instead of a multi-broker cluster or a second message
-system alongside Redis (which we already run for the shop cache). Consumer
+One redis:7 container to run instead of a multi-broker cluster or a second
+message system. It is a second Redis, not the shop cache's: phase 9 split
+the two after a live run showed `restart_dependency` restarting the event
+bus mid-incident (docs/reports/FINAL_VERIFICATION.md). The image is already
+in the stack either way, so the cost of the split is one more container. Consumer
 groups are available if we later need multiple independent readers, but nothing in this
 scope needs them: core-api's single tailing process is enough. The tradeoff
 is throughput and retention: Redis Streams is not built for the sustained

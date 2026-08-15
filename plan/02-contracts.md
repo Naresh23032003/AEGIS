@@ -104,6 +104,7 @@ LangGraph checkpoint tables are created by AsyncPostgresSaver in the same databa
 | POST /keys | register approver pubkey {pubkey, label} |
 | POST /chaos/{scenario} | inject; scenario in the fixed set of five |
 | DELETE /chaos/{scenario} | clear fault manually |
+| GET /chaos/{scenario} | {scenario, fault_present}; fault_present null when the chaos API cannot tell. Added in phase 9 so a test can assert a healed incident also left the fault gone. Not an agent input |
 | GET /metrics/summary | MTTR trend, autonomy rate, escalation rate, cost per incident, per scenario |
 | GET /catalog | action catalog with tiers (console renders policy table from this) |
 | GET /incidents/{id}/evidence-pack | zip: regulator-styled PDF + events.jsonl (built in phase 6, spec in plan/phases/phase-6.md) |

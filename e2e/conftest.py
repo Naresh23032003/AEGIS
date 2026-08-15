@@ -199,6 +199,28 @@ def wait_for_resolution(client: httpx.Client, incident_id: str) -> dict[str, Any
     raise TimeoutError(f"incident {incident_id} did not resolve within {RESOLVE_TIMEOUT_SECONDS}s")
 
 
+def wait_for_fault_cleared(
+    client: httpx.Client, scenario: str, timeout: float = 60.0
+) -> bool | None:
+    """Poll GET /chaos/{scenario} until the injected fault is gone.
+
+    Returns the last reading: False (gone), True (still there when the wait
+    ran out), or None (the chaos API could not tell, which a caller must not
+    read as success). Polling rather than reading once because a restart is
+    not instant: the action returns as soon as Docker accepts it, and the
+    container needs a moment to come back.
+    """
+    deadline = time.time() + timeout
+    present: bool | None = None
+    while True:
+        resp = client.get(f"/api/chaos/{scenario}")
+        resp.raise_for_status()
+        present = resp.json()["fault_present"]
+        if present is False or time.time() >= deadline:
+            return present
+        time.sleep(2)
+
+
 def events_for(client: httpx.Client, incident_id: str) -> list[dict[str, Any]]:
     resp = client.get(f"/api/incidents/{incident_id}/events")
     resp.raise_for_status()

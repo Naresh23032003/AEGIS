@@ -44,9 +44,25 @@ services:
       timeout: 3s
       retries: 10
 
-  redis:
+  # Two Redis instances, not one (plan/01-architecture.md, Runtime topology).
+  # shop-redis is the demo shop's cache and the only Redis any catalog
+  # action may name; aegis-redis carries the aegis:events stream and is in
+  # no catalog, so no agent can reach it. A single instance let
+  # restart_dependency restart AEGIS's own event bus mid-incident, which is
+  # where the "failed to publish event" lines in the phase 8 live run came
+  # from (docs/reports/FINAL_VERIFICATION.md, Live verification).
+  shop-redis:
     image: redis:7.4.10
-    container_name: redis
+    container_name: shop-redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  aegis-redis:
+    image: redis:7.4.10
+    container_name: aegis-redis
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -131,7 +147,7 @@ services:
     depends_on:
       shop-db:
         condition: service_healthy
-      redis:
+      shop-redis:
         condition: service_healthy
       toxiproxy:
         condition: service_healthy
@@ -194,7 +210,7 @@ services:
     depends_on:
       aegis-db:
         condition: service_healthy
-      redis:
+      aegis-redis:
         condition: service_healthy
       opa:
         condition: service_healthy
@@ -222,7 +238,7 @@ services:
     depends_on:
       aegis-db:
         condition: service_healthy
-      redis:
+      aegis-redis:
         condition: service_healthy
       lgtm:
         condition: service_healthy
@@ -257,6 +273,10 @@ services:
       retries: 10
     depends_on:
       aegis-db:
+        condition: service_healthy
+      # clear_cache and flush_queue talk to the shop cache, never to
+      # aegis-redis; the executor holds no connection to the event stream.
+      shop-redis:
         condition: service_healthy
 
   # --- console ---

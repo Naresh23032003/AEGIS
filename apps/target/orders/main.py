@@ -1,5 +1,5 @@
 """target-orders: talks to shop Postgres through Toxiproxy, caches reads
-through redis. plan/06-milestones.md, Phase 1.
+through shop-redis. plan/06-milestones.md, Phase 1.
 """
 
 import asyncio
@@ -29,7 +29,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s orders %(message)s")
 logger = logging.getLogger("target.orders")
 
 SHOP_DATABASE_URL = os.environ["SHOP_DATABASE_URL"]
-REDIS_URL = os.environ["REDIS_URL"]
+SHOP_REDIS_URL = os.environ["SHOP_REDIS_URL"]
 OTEL_ENDPOINT = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "http://lgtm:4318")
 TOXIPROXY_URL = os.environ.get("TOXIPROXY_URL", "http://toxiproxy:8474")
 CACHE_TTL_SECONDS = 30
@@ -94,7 +94,7 @@ async def lifespan(app: FastAPI):
     pool = await asyncpg.create_pool(SHOP_DATABASE_URL, min_size=1, max_size=5)
     async with pool.acquire() as conn:
         await conn.execute(SCHEMA_SQL)
-    cache = redis.from_url(REDIS_URL, decode_responses=True)
+    cache = redis.from_url(SHOP_REDIS_URL, decode_responses=True)
     yield
     await pool.close()
     await cache.aclose()
