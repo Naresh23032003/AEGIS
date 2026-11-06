@@ -4,6 +4,10 @@ on:
   push:
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint-test:
     runs-on: ubuntu-latest
@@ -13,10 +17,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
 
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: npm
 
       # No extra `pip install -e apps/core` here on purpose: `make venv` owns
       # that now, so CI exercises the same provisioning a clean clone gets.
@@ -34,6 +41,34 @@ jobs:
 
       - name: Test
         run: make test
+
+  e2e:
+    needs: lint-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      # No extra `pip install -e apps/core` here on purpose: `make venv` owns
+      # that now, so CI exercises the same provisioning a clean clone gets.
+      - name: Install Python dev tooling
+        run: make venv
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Regenerate contracts
+        run: make contracts
 
       - name: Bring up the stack (MOCK_LLM=1, no API key needed)
         run: make up
