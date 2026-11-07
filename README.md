@@ -112,7 +112,8 @@ run on. `latency` is the exception, for the reason below.
 A production incident-response system. One docker-compose host, five
 chaos scenarios, a free-tier LLM key with a daily quota this project
 exhausted repeatedly. Kubernetes executor, Temporal, WebAuthn approvals
-and a larger catalog are tracked as issues, not built here.
+and a larger catalog are tracked as issues, not built here; see
+[docs/ROADMAP.md](docs/ROADMAP.md) for scopes and done-whens.
 
 **Diagnosis quality is the honest weak point, and the prompts were hiding
 how weak.** The diagnose prompt used to list all five injected faults by
