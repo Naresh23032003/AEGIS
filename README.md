@@ -1,5 +1,8 @@
 # AEGIS
 
+[![CI](https://github.com/Naresh23032003/AEGIS/actions/workflows/ci.yml/badge.svg)](https://github.com/Naresh23032003/AEGIS/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+
 ![AEGIS console: a stopped service is detected, diagnosed from metrics and logs, restarted and verified in 7 seconds; then an injected latency fault gets a restart that does nothing to it, and the incident closes with the fault still installed and the summary saying so](docs/media/demo.gif)
 
 AEGIS is a self-healing incident operations platform. It watches a real
@@ -172,3 +175,7 @@ make e2e-live       # same, with MOCK_LLM=0 in .env
 
 Built from the specification in [PLAN.md](PLAN.md) and [plan/](plan/), one
 phase at a time. Each phase's report is in [docs/reports/](docs/reports/).
+
+## License
+
+Apache-2.0, see LICENSE.
