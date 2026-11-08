@@ -5,7 +5,7 @@ mypy==2.3.0
 pytest==9.1.1
 pytest-asyncio==1.4.0
 httpx==0.28.1
-datamodel-code-generator==0.72.1
+datamodel-code-generator==0.81.0
 PyYAML==6.0.3
 asyncpg-stubs==0.31.3
 types-docker==7.2.0.20260728
