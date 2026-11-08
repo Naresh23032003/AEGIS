@@ -307,9 +307,9 @@ async def _probe_services_once(
     rules_cfg = load_rules()
     queries = rules_cfg["queries"]
     thresholds = {
-        r["id"]: float(r["threshold_ms"] if "threshold_ms" in r else r["threshold"])
+        r["query"]: float(r["threshold_ms"] if "threshold_ms" in r else r["threshold"])
         for r in rules_cfg["rules"]
-        if r["id"] != "service_down"
+        if "query" in r
     }
     result: dict[str, Any] = {}
     for service in service_list:
